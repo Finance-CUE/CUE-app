@@ -1,0 +1,9 @@
+{
+  "name": "cue",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "scripts": {
+    "mobile": "pnpm --filter mobile start",
+    "backend": "cd apps/backend && uvicorn app.main:app --reload"
+  }
+}

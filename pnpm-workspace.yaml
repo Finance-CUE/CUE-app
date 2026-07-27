@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+minimumReleaseAgeExclude:
+  - expo-constants@57.0.7
+  - expo-linking@57.0.4
