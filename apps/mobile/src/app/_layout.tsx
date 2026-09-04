@@ -16,11 +16,18 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppProviders } from '@/providers/AppProviders';
+import { useAuthStore } from '@/features/auth/store';
 
 const CUE_BACKGROUND = '#FAF8F6';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const restore = useAuthStore((state) => state.restore);
+
+  // Rehydrate the session from the keychain once, on cold start.
+  useEffect(() => {
+    restore();
+  }, [restore]);
 
   useEffect(() => {
     const configureSystemUI = async () => {

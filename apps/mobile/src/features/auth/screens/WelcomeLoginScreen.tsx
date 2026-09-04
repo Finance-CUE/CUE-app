@@ -1,62 +1,38 @@
-import { Alert } from 'react-native';
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
 
 import { WelcomeLogin } from '@/features/auth/components/WelcomeLogin';
+import { useLogin } from '@/features/auth/hooks';
+import { toErrorMessage } from '@/lib/api';
 
 export function WelcomeLoginScreen() {
   const router = useRouter();
+  const login = useLogin();
 
-  const handleContinue = async (phoneNumber: string) => {
-    const cleanedNumber = phoneNumber.replace(/\D/g, '');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-    // 1. Validate input first
-    if (cleanedNumber.length !== 10) {
-      Alert.alert(
-        'Invalid number',
-        'Please enter a valid 10-digit mobile number.',
-      );
-      return;
-    }
+  const handleContinue = (phoneNumber: string, password: string) => {
+    setErrorMessage(null);
 
-    // 2. Check whether this user exists
-    //
-    // This will be connected to the CUE backend/database.
-    const exists = await checkUserExists(cleanedNumber);
-
-    // 3. New user → signup
-    if (!exists) {
-      Alert.alert(
-        'Account not found',
-        'No account exists with this number. Please sign up first.',
-        [
-          {
-            text: 'Sign up',
-            onPress: () => {
-              router.push({
-                pathname: '/auth/signup',
-                params: {
-                  phoneNumber: cleanedNumber,
-                },
-              });
-            },
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-        ],
-      );
-
-      return;
-    }
-
-    // 4. Existing user → OTP
-    router.push({
-      pathname: '/auth/otp',
-      params: {
-        phoneNumber: cleanedNumber,
+    login.mutate(
+      {
+        phone: phoneNumber.replace(/\D/g, ''),
+        password,
       },
-    });
+      {
+        onSuccess: () => {
+          router.replace('/explore');
+        },
+        onError: (error) => {
+          // The backend answers a wrong password and an unregistered number
+          // identically, so this message must stay generic - narrowing it here
+          // would hand back the account enumeration the API refuses to give.
+          setErrorMessage(
+            toErrorMessage(error, 'Incorrect mobile number or password.'),
+          );
+        },
+      },
+    );
   };
 
   const handleGooglePress = () => {
@@ -72,14 +48,8 @@ export function WelcomeLoginScreen() {
       onContinue={handleContinue}
       onGooglePress={handleGooglePress}
       onSignupPress={handleSignupPress}
+      isSubmitting={login.isPending}
+      submitError={errorMessage}
     />
   );
-}
-
-// Temporary placeholder.
-// Replace this with the real API/database check.
-async function checkUserExists(phoneNumber: string): Promise<boolean> {
-  console.log('Checking user:', phoneNumber);
-
-  return false;
 }

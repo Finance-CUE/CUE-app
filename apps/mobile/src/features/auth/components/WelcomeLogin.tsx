@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,9 +17,11 @@ import { GoogleLogo } from '@/components/GoogleLogo';
 import { validateIndianMobileNumber } from '@/features/auth/utils/phoneValidation';
 
 interface WelcomeLoginProps {
-  onContinue: (phoneNumber: string) => void;
+  onContinue: (phoneNumber: string, password: string) => void;
   onGooglePress: () => void;
   onSignupPress: () => void;
+  isSubmitting?: boolean;
+  submitError?: string | null;
 }
 
 const COLORS = {
@@ -40,11 +43,16 @@ export function WelcomeLogin({
   onContinue,
   onGooglePress,
   onSignupPress,
+  isSubmitting = false,
+  submitError = null,
 }: WelcomeLoginProps) {
   const insets = useSafeAreaInsets();
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   const handlePhoneChange = (value: string) => {
     setPhoneNumber(value);
@@ -56,7 +64,19 @@ export function WelcomeLogin({
     }
   };
 
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+
+    if (passwordError) {
+      setPasswordError('');
+    }
+  };
+
   const handleContinue = () => {
+    if (isSubmitting) {
+      return;
+    }
+
     const validation = validateIndianMobileNumber(phoneNumber);
 
     if (!validation.isValid) {
@@ -66,10 +86,21 @@ export function WelcomeLogin({
 
     setPhoneError('');
 
-    onContinue(phoneNumber.trim());
+    // Length is the only client-side check on login. Anything stricter would
+    // reject users whose password predates a future policy change - the server
+    // is what decides whether a password is correct.
+    if (!password) {
+      setPasswordError('Please enter your password.');
+      return;
+    }
+
+    setPasswordError('');
+
+    onContinue(phoneNumber.trim(), password);
   };
 
   const hasError = Boolean(phoneError);
+  const isDisabled = isSubmitting || !phoneNumber || !password;
 
   return (
     <View style={styles.screen}>
@@ -184,8 +215,7 @@ export function WelcomeLogin({
                 autoComplete="tel"
                 value={phoneNumber}
                 onChangeText={handlePhoneChange}
-                onSubmitEditing={handleContinue}
-                returnKeyType="done"
+                returnKeyType="next"
               />
             </View>
 
@@ -201,25 +231,88 @@ export function WelcomeLogin({
               </View>
             )}
 
+            {/* Password */}
+
+            <View
+              style={[
+                styles.passwordInput,
+                Boolean(passwordError) && styles.phoneInputError,
+              ]}
+            >
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#A9A3AE"
+                secureTextEntry={!isPasswordVisible}
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="password"
+                autoComplete="current-password"
+                value={password}
+                onChangeText={handlePasswordChange}
+                onSubmitEditing={handleContinue}
+                returnKeyType="done"
+              />
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setIsPasswordVisible((visible) => !visible)}
+                hitSlop={10}
+              >
+                <Text style={styles.passwordToggle}>
+                  {isPasswordVisible ? 'Hide' : 'Show'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {Boolean(passwordError) && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorIcon}>!</Text>
+
+                <Text style={styles.errorText}>
+                  {passwordError}
+                </Text>
+              </View>
+            )}
+
+            {/* Server-side failure */}
+
+            {Boolean(submitError) && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorIcon}>!</Text>
+
+                <Text style={styles.errorText}>
+                  {submitError}
+                </Text>
+              </View>
+            )}
+
             {/* Continue */}
 
             <TouchableOpacity
               activeOpacity={0.85}
+              disabled={isDisabled}
               style={[
                 styles.primaryButton,
-                !phoneNumber && styles.primaryButtonDisabled,
+                isDisabled && styles.primaryButtonDisabled,
               ]}
               onPress={handleContinue}
             >
-              <Text style={styles.primaryButtonText}>
-                Continue
-              </Text>
+              {isSubmitting ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <>
+                  <Text style={styles.primaryButtonText}>
+                    Continue
+                  </Text>
 
-              <View style={styles.arrowContainer}>
-                <Text style={styles.arrow}>
-                  →
-                </Text>
-              </View>
+                  <View style={styles.arrowContainer}>
+                    <Text style={styles.arrow}>
+                      →
+                    </Text>
+                  </View>
+                </>
+              )}
             </TouchableOpacity>
 
             {/* Google */}
@@ -456,6 +549,26 @@ const styles = StyleSheet.create({
 
   phoneDividerError: {
     backgroundColor: 'rgba(198,95,104,0.35)',
+  },
+
+  passwordInput: {
+    height: 52,
+    width: '100%',
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 26,
+    backgroundColor: COLORS.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+  },
+
+  passwordToggle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.link,
+    marginLeft: 10,
   },
 
   input: {
