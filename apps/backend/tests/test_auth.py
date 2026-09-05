@@ -19,6 +19,7 @@ os.environ.setdefault(
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.api.dependencies.auth import get_auth_client  # noqa: E402
+from app.core.config import Settings  # noqa: E402
 from app.features.auth.identifiers import (  # noqa: E402
     InvalidPhoneNumberError,
     mask_phone,
@@ -64,6 +65,35 @@ def test_auth_identifier_is_deterministic():
 
 def test_mask_phone_hides_the_middle():
     assert mask_phone(VALID_PHONE) == "98******10"
+
+
+# -- settings --------------------------------------------------------------
+
+
+def test_comma_separated_cors_origins_load_from_a_dotenv_file(tmp_path):
+    """Regression: pydantic-settings JSON-decodes list fields from .env.
+
+    Without NoDecode on cors_origins this raises SettingsError at import time,
+    so the whole app fails to boot the moment CORS_ORIGINS is set.
+    """
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "SUPABASE_URL=https://test-ref.supabase.co/\n"
+        "SUPABASE_PUBLISHABLE_KEY=sb_publishable_test\n"
+        "SUPABASE_SECRET_KEY=sb_secret_test\n"
+        "SUPABASE_JWKS_URL=https://test-ref.supabase.co/auth/v1/.well-known/jwks.json\n"
+        "CORS_ORIGINS=http://localhost:8081, http://192.168.0.215:8081\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings(_env_file=str(env_file))
+
+    assert settings.cors_origins == [
+        "http://localhost:8081",
+        "http://192.168.0.215:8081",
+    ]
+    # Trailing slash stripped, so auth_base_url never doubles up.
+    assert settings.auth_base_url == "https://test-ref.supabase.co/auth/v1"
 
 
 # -- request validation ----------------------------------------------------

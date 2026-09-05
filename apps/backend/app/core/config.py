@@ -1,8 +1,8 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     supabase_secret_key: str
     supabase_jwks_url: str
 
-    cors_origins: list[str] = Field(default_factory=list)
+    # NoDecode: without it pydantic-settings JSON-decodes list fields straight
+    # from .env and a comma-separated value raises before any validator runs.
+    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # Internal identifier domain for phone-based accounts. Uses the RFC 2606
     # reserved .invalid TLD so a stray password-reset mail can never be
