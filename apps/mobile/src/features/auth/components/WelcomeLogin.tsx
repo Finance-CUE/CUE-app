@@ -13,12 +13,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { GoogleLogo } from '@/components/GoogleLogo';
-import { validateIndianMobileNumber } from '@/features/auth/utils/phoneValidation';
+import { validateEmail } from '@/features/auth/utils/passwordValidation';
 
 interface WelcomeLoginProps {
-  onContinue: (phoneNumber: string, password: string) => void;
-  onGooglePress: () => void;
+  onContinue: (email: string, password: string) => void;
   onSignupPress: () => void;
   isSubmitting?: boolean;
   submitError?: string | null;
@@ -41,26 +39,25 @@ const COLORS = {
 
 export function WelcomeLogin({
   onContinue,
-  onGooglePress,
   onSignupPress,
   isSubmitting = false,
   submitError = null,
 }: WelcomeLoginProps) {
   const insets = useSafeAreaInsets();
 
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [phoneError, setPhoneError] = useState('');
+  const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
-  const handlePhoneChange = (value: string) => {
-    setPhoneNumber(value);
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
 
     // Don't immediately show an error while the user is typing.
-    // Clear the previous error once they start correcting the number.
-    if (phoneError) {
-      setPhoneError('');
+    // Clear the previous error once they start correcting the address.
+    if (emailError) {
+      setEmailError('');
     }
   };
 
@@ -77,14 +74,14 @@ export function WelcomeLogin({
       return;
     }
 
-    const validation = validateIndianMobileNumber(phoneNumber);
+    const validation = validateEmail(email);
 
     if (!validation.isValid) {
-      setPhoneError(validation.message ?? 'Please enter a valid mobile number.');
+      setEmailError(validation.message ?? 'Please enter a valid email address.');
       return;
     }
 
-    setPhoneError('');
+    setEmailError('');
 
     // Length is the only client-side check on login. Anything stricter would
     // reject users whose password predates a future policy change - the server
@@ -96,11 +93,11 @@ export function WelcomeLogin({
 
     setPasswordError('');
 
-    onContinue(phoneNumber.trim(), password);
+    onContinue(email.trim(), password);
   };
 
-  const hasError = Boolean(phoneError);
-  const isDisabled = isSubmitting || !phoneNumber || !password;
+  const hasError = Boolean(emailError);
+  const isDisabled = isSubmitting || !email || !password;
 
   return (
     <View style={styles.screen}>
@@ -186,35 +183,25 @@ export function WelcomeLogin({
           ───────────────────────────────────── */}
 
           <View style={styles.form}>
-            {/* Phone */}
+            {/* Email */}
 
             <View
               style={[
-                styles.phoneInput,
-                hasError && styles.phoneInputError,
+                styles.fieldInput,
+                hasError && styles.fieldInputError,
               ]}
             >
-              <Text style={styles.countryCode}>
-                +91
-              </Text>
-
-              <View
-                style={[
-                  styles.phoneDivider,
-                  hasError && styles.phoneDividerError,
-                ]}
-              />
-
               <TextInput
                 style={styles.input}
-                placeholder="Enter mobile number"
+                placeholder="Enter email address"
                 placeholderTextColor="#A9A3AE"
-                keyboardType="phone-pad"
-                maxLength={10}
-                textContentType="telephoneNumber"
-                autoComplete="tel"
-                value={phoneNumber}
-                onChangeText={handlePhoneChange}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="emailAddress"
+                autoComplete="email"
+                value={email}
+                onChangeText={handleEmailChange}
                 returnKeyType="next"
               />
             </View>
@@ -226,7 +213,7 @@ export function WelcomeLogin({
                 <Text style={styles.errorIcon}>!</Text>
 
                 <Text style={styles.errorText}>
-                  {phoneError}
+                  {emailError}
                 </Text>
               </View>
             )}
@@ -236,7 +223,7 @@ export function WelcomeLogin({
             <View
               style={[
                 styles.passwordInput,
-                Boolean(passwordError) && styles.phoneInputError,
+                Boolean(passwordError) && styles.fieldInputError,
               ]}
             >
               <TextInput
@@ -313,20 +300,6 @@ export function WelcomeLogin({
                   </View>
                 </>
               )}
-            </TouchableOpacity>
-
-            {/* Google */}
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.googleButton}
-              onPress={onGooglePress}
-            >
-              <GoogleLogo size={21} />
-
-              <Text style={styles.googleButtonText}>
-                Continue with Google
-              </Text>
             </TouchableOpacity>
 
             {/* Divider */}
@@ -517,7 +490,7 @@ const styles = StyleSheet.create({
     marginTop: 28,
   },
 
-  phoneInput: {
+  fieldInput: {
     height: 52,
     width: '100%',
     borderWidth: 1,
@@ -529,26 +502,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
 
-  phoneInputError: {
+  fieldInputError: {
     borderColor: COLORS.error,
     backgroundColor: COLORS.errorBackground,
-  },
-
-  countryCode: {
-    fontSize: 14,
-    color: '#57515D',
-    fontWeight: '500',
-  },
-
-  phoneDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: COLORS.divider,
-    marginHorizontal: 11,
-  },
-
-  phoneDividerError: {
-    backgroundColor: 'rgba(198,95,104,0.35)',
   },
 
   passwordInput: {
@@ -645,28 +601,6 @@ const styles = StyleSheet.create({
     color: COLORS.purpleLight,
     fontSize: 22,
     lineHeight: 22,
-  },
-
-  /* GOOGLE */
-
-  googleButton: {
-    height: 52,
-    width: '100%',
-    marginTop: 10,
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.white,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  googleButtonText: {
-    marginLeft: 10,
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '500',
   },
 
   /* DIVIDER */

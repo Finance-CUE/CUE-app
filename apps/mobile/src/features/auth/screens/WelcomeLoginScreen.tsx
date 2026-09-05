@@ -11,12 +11,12 @@ export function WelcomeLoginScreen() {
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleContinue = (phoneNumber: string, password: string) => {
+  const handleContinue = (email: string, password: string) => {
     setErrorMessage(null);
 
     login.mutate(
       {
-        phone: phoneNumber.replace(/\D/g, ''),
+        email: email.trim().toLowerCase(),
         password,
       },
       {
@@ -24,19 +24,15 @@ export function WelcomeLoginScreen() {
           router.replace('/explore');
         },
         onError: (error) => {
-          // The backend answers a wrong password and an unregistered number
+          // The backend answers a wrong password and an unregistered address
           // identically, so this message must stay generic - narrowing it here
           // would hand back the account enumeration the API refuses to give.
           setErrorMessage(
-            toErrorMessage(error, 'Incorrect mobile number or password.'),
+            toErrorMessage(error, 'Incorrect email or password.'),
           );
         },
       },
     );
-  };
-
-  const handleGooglePress = () => {
-    // Google authentication will be connected separately.
   };
 
   const handleSignupPress = () => {
@@ -46,7 +42,6 @@ export function WelcomeLoginScreen() {
   return (
     <WelcomeLogin
       onContinue={handleContinue}
-      onGooglePress={handleGooglePress}
       onSignupPress={handleSignupPress}
       isSubmitting={login.isPending}
       submitError={errorMessage}
