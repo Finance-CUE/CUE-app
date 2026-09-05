@@ -38,12 +38,12 @@ async def signup(
     session means there is exactly one code path that issues tokens.
     """
     await auth.sign_up(
+        email=payload.email,
         phone=payload.phone,
         password=payload.password,
         full_name=payload.full_name,
-        contact_email=payload.email,
     )
-    return await auth.sign_in(phone=payload.phone, password=payload.password)
+    return await auth.sign_in(email=payload.email, password=payload.password)
 
 
 @router.post("/login")
@@ -53,7 +53,7 @@ async def login(
     payload: LoginRequest,
     auth: AuthClient,
 ) -> SessionResponse:
-    return await auth.sign_in(phone=payload.phone, password=payload.password)
+    return await auth.sign_in(email=payload.email, password=payload.password)
 
 
 @router.post("/refresh")

@@ -1,14 +1,8 @@
 """Phone number handling for CUE accounts.
 
-CUE users authenticate with an Indian mobile number and a password. Supabase's
-native phone provider cannot be enabled without an SMS provider configured in
-the dashboard, so each phone number is mapped to a stable internal identifier
-and Supabase's email+password grant is used underneath. Users never see the
-identifier; it is derived, never stored as input, and never returned to a client.
-
-ponytail: swap to Supabase native phone auth once an SMS provider (Twilio /
-MessageBird) and Indian DLT registration are in place. Only `to_auth_identifier`
-and the two service calls that use it need to change.
+CUE users authenticate with an email address and a password - Supabase's native
+email+password grant, with the real address as the identifier. A mobile number
+is still collected at signup and kept as profile data; it is not a credential.
 """
 
 import re
@@ -48,16 +42,6 @@ def normalise_phone(raw: str) -> str:
 def to_e164(phone: str) -> str:
     """+91XXXXXXXXXX, for display and for future SMS delivery."""
     return f"+{COUNTRY_CODE}{phone}"
-
-
-def to_auth_identifier(phone: str, domain: str) -> str:
-    """Deterministic internal Supabase identifier for a phone number.
-
-    Deterministic on purpose: it means no phone -> account lookup table, and
-    uniqueness of the phone number is enforced by Supabase's own uniqueness
-    constraint on the identifier.
-    """
-    return f"{COUNTRY_CODE}{phone}@{domain}"
 
 
 def mask_phone(phone: str) -> str:

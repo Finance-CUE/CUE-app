@@ -24,13 +24,13 @@ from app.features.auth.identifiers import (  # noqa: E402
     InvalidPhoneNumberError,
     mask_phone,
     normalise_phone,
-    to_auth_identifier,
 )
 from app.features.auth.schemas import SessionResponse, UserResponse  # noqa: E402
 from app.features.auth.service import InvalidCredentialsError  # noqa: E402
 from app.main import app  # noqa: E402
 
 VALID_PHONE = "9876543210"
+VALID_EMAIL = "test@example.com"
 VALID_PASSWORD = "correct horse7"
 
 
@@ -55,12 +55,6 @@ def test_normalise_phone_strips_formatting():
 def test_normalise_phone_rejects(bad):
     with pytest.raises(InvalidPhoneNumberError):
         normalise_phone(bad)
-
-
-def test_auth_identifier_is_deterministic():
-    first = to_auth_identifier(VALID_PHONE, "phone.cue.invalid")
-    assert first == to_auth_identifier(VALID_PHONE, "phone.cue.invalid")
-    assert first == "919876543210@phone.cue.invalid"
 
 
 def test_mask_phone_hides_the_middle():
@@ -109,7 +103,7 @@ class _FakeAuth:
     async def sign_in(self, **kwargs) -> SessionResponse:
         self.calls.append(("sign_in", kwargs))
         if self.fail:
-            raise InvalidCredentialsError("Incorrect mobile number or password.")
+            raise InvalidCredentialsError("Incorrect email or password.")
         return SessionResponse(
             access_token="access",
             refresh_token="refresh",
@@ -118,7 +112,7 @@ class _FakeAuth:
                 id="user-1",
                 full_name="Test User",
                 phone="+919876543210",
-                contact_email="test@example.com",
+                contact_email=VALID_EMAIL,
             ),
         )
 
@@ -141,7 +135,7 @@ def test_login_returns_a_session():
     with _client(_FakeAuth()) as client:
         response = client.post(
             "/api/v1/auth/login",
-            json={"phone": VALID_PHONE, "password": VALID_PASSWORD},
+            json={"email": VALID_EMAIL, "password": VALID_PASSWORD},
         )
 
     assert response.status_code == 200
@@ -149,7 +143,6 @@ def test_login_returns_a_session():
     assert body["access_token"] == "access"
     # The client must never receive Supabase's own identifiers or keys.
     assert "supabase" not in response.text.lower()
-    assert "@phone.cue.invalid" not in response.text
 
 
 def test_login_rejects_unknown_fields():
@@ -157,7 +150,7 @@ def test_login_rejects_unknown_fields():
         response = client.post(
             "/api/v1/auth/login",
             json={
-                "phone": VALID_PHONE,
+                "email": VALID_EMAIL,
                 "password": VALID_PASSWORD,
                 "is_admin": True,
             },
@@ -166,11 +159,11 @@ def test_login_rejects_unknown_fields():
     assert response.status_code == 422
 
 
-def test_login_validates_phone_server_side():
+def test_login_validates_email_server_side():
     with _client(_FakeAuth()) as client:
         response = client.post(
             "/api/v1/auth/login",
-            json={"phone": "1234567890", "password": VALID_PASSWORD},
+            json={"email": "not-an-email", "password": VALID_PASSWORD},
         )
 
     assert response.status_code == 422
@@ -180,11 +173,11 @@ def test_bad_credentials_do_not_reveal_whether_the_account_exists():
     with _client(_FakeAuth(fail=True)) as client:
         response = client.post(
             "/api/v1/auth/login",
-            json={"phone": VALID_PHONE, "password": "wrong pass1"},
+            json={"email": VALID_EMAIL, "password": "wrong pass1"},
         )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Incorrect mobile number or password."
+    assert response.json()["detail"] == "Incorrect email or password."
 
 
 @pytest.mark.parametrize(
@@ -206,7 +199,7 @@ def test_signup_rejects_weak_passwords(weak):
     assert response.status_code == 422
 
 
-def test_signup_passes_the_contact_email_through_separately():
+def test_signup_uses_the_email_as_the_login_identifier():
     auth = _FakeAuth()
     with _client(auth) as client:
         response = client.post(
@@ -221,8 +214,12 @@ def test_signup_passes_the_contact_email_through_separately():
 
     assert response.status_code == 201
     signup_call = next(kwargs for name, kwargs in auth.calls if name == "sign_up")
-    assert signup_call["contact_email"] == "test@example.com"
+    assert signup_call["email"] == "test@example.com"
     assert signup_call["phone"] == VALID_PHONE
+
+    # Signup must sign in with the same address, never a derived identifier.
+    signin_call = next(kwargs for name, kwargs in auth.calls if name == "sign_in")
+    assert signin_call["email"] == "test@example.com"
 
 
 def test_protected_route_requires_a_token():

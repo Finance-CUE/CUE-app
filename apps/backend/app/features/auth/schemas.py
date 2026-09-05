@@ -67,13 +67,8 @@ class SignupRequest(_StrictModel):
 
 
 class LoginRequest(_StrictModel):
-    phone: str
+    email: EmailStr
     password: str = Field(min_length=1, max_length=200)
-
-    @field_validator("phone")
-    @classmethod
-    def _phone(cls, value: str) -> str:
-        return _validate_phone(value)
 
 
 class RefreshRequest(_StrictModel):

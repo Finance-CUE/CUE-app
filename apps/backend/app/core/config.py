@@ -29,11 +29,6 @@ class Settings(BaseSettings):
     # from .env and a comma-separated value raises before any validator runs.
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
-    # Internal identifier domain for phone-based accounts. Uses the RFC 2606
-    # reserved .invalid TLD so a stray password-reset mail can never be
-    # delivered to a real inbox.
-    auth_identifier_domain: str = "phone.cue.invalid"
-
     @field_validator("supabase_url")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
