@@ -17,6 +17,7 @@ from app.features.auth.service import (
     SupabaseAuthClient,
     UpstreamAuthError,
     UpstreamRateLimitError,
+    WeakPasswordError,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -68,6 +69,11 @@ async def _invalid_credentials(request: Request, exc: InvalidCredentialsError) -
 @app.exception_handler(AccountExistsError)
 async def _account_exists(request: Request, exc: AccountExistsError) -> JSONResponse:
     return _error(status.HTTP_409_CONFLICT, str(exc))
+
+
+@app.exception_handler(WeakPasswordError)
+async def _weak_password(request: Request, exc: WeakPasswordError) -> JSONResponse:
+    return _error(status.HTTP_400_BAD_REQUEST, str(exc))
 
 
 @app.exception_handler(UpstreamRateLimitError)

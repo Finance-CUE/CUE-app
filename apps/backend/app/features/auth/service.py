@@ -30,6 +30,10 @@ class AccountExistsError(AuthError):
     """Signup for an email address that already has an account."""
 
 
+class WeakPasswordError(AuthError):
+    """Supabase rejected the password as compromised or too weak."""
+
+
 class UpstreamAuthError(AuthError):
     """Supabase was unreachable or returned something we do not handle."""
 
@@ -123,8 +127,18 @@ class SupabaseAuthClient:
             logger.info("account created for %s", mask_phone(phone))
             return
 
-        if response.status_code in (400, 422) and _mentions_existing_user(response):
-            raise AccountExistsError("An account already exists for this email address.")
+        if response.status_code in (400, 422):
+            if _mentions_existing_user(response):
+                raise AccountExistsError("An account already exists for this email address.")
+
+            # Supabase's leaked-password check lives upstream, so this is the
+            # only place that knows the password was refused rather than the
+            # request being malformed. Without it the user gets "try again".
+            if _mentions_weak_password(response):
+                raise WeakPasswordError(
+                    "That password has appeared in a data breach. "
+                    "Please choose a different one."
+                )
 
         if response.status_code == 429:
             raise UpstreamRateLimitError("Too many attempts. Please try again shortly.")
@@ -185,16 +199,27 @@ class SupabaseAuthClient:
             logger.warning("logout revocation failed upstream; client tokens discarded")
 
 
-def _mentions_existing_user(response: httpx.Response) -> bool:
+def _upstream_message(response: httpx.Response) -> str:
+    """Lowercased upstream error text. Never returned to a client as-is."""
     try:
         body = response.json()
     except ValueError:
-        return False
+        return ""
 
-    message = " ".join(
-        str(body.get(key, "")) for key in ("msg", "message", "error_description", "error")
+    return " ".join(
+        str(body.get(key, ""))
+        for key in ("msg", "message", "error_description", "error", "error_code")
     ).lower()
+
+
+def _mentions_existing_user(response: httpx.Response) -> bool:
+    message = _upstream_message(response)
     return "already" in message and ("registered" in message or "exists" in message)
+
+
+def _mentions_weak_password(response: httpx.Response) -> bool:
+    message = _upstream_message(response)
+    return "weak_password" in message or ("password" in message and "weak" in message)
 
 
 def _to_session(payload: dict[str, Any]) -> SessionResponse:

@@ -5,6 +5,7 @@ Run: cd apps/backend && pytest
 
 import os
 
+import httpx
 import pytest
 
 os.environ.setdefault("APP_ENV", "development")
@@ -26,7 +27,11 @@ from app.features.auth.identifiers import (  # noqa: E402
     normalise_phone,
 )
 from app.features.auth.schemas import SessionResponse, UserResponse  # noqa: E402
-from app.features.auth.service import InvalidCredentialsError  # noqa: E402
+from app.features.auth.service import (  # noqa: E402
+    InvalidCredentialsError,
+    _mentions_existing_user,
+    _mentions_weak_password,
+)
 from app.main import app  # noqa: E402
 
 VALID_PHONE = "9876543210"
@@ -229,3 +234,38 @@ def test_protected_route_requires_a_token():
             client.get("/api/v1/auth/me", headers={"Authorization": "Bearer nonsense"}).status_code
             == 401
         )
+
+
+# -- upstream error classification -----------------------------------------
+
+
+def _upstream(status_code: int, body: dict) -> httpx.Response:
+    return httpx.Response(
+        status_code,
+        json=body,
+        request=httpx.Request("POST", "https://test-ref.supabase.co/auth/v1/admin/users"),
+    )
+
+
+def test_a_rejected_password_is_told_apart_from_a_malformed_request():
+    """Both come back as 422. Only one should ask the user for a new password."""
+    weak = _upstream(
+        422,
+        {
+            "error_code": "weak_password",
+            "msg": "Password is known to be weak and easy to guess, "
+            "please choose a different one.",
+        },
+    )
+    assert _mentions_weak_password(weak)
+
+    malformed = _upstream(422, {"msg": "Unable to validate email address: invalid format"})
+    assert not _mentions_weak_password(malformed)
+
+
+def test_an_existing_account_is_recognised():
+    existing = _upstream(
+        422, {"msg": "A user with this email address has already been registered"}
+    )
+    assert _mentions_existing_user(existing)
+    assert not _mentions_weak_password(existing)
