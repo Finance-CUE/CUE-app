@@ -29,6 +29,9 @@ _UNAUTHORISED = HTTPException(
 )
 
 
+_CLOCK_SKEW_SECONDS = 30
+
+
 def get_auth_client(request: Request) -> SupabaseAuthClient:
     return request.app.state.auth_client
 
@@ -59,6 +62,9 @@ def get_current_claims(
             audience="authenticated",
             issuer=settings.jwt_issuer,
             options={"require": ["exp", "sub", "aud", "iss"]},
+            # Supabase stamps iat/nbf from its clock; ours can run a moment
+            # behind, which rejected brand-new tokens right after signup.
+            leeway=_CLOCK_SKEW_SECONDS,
         )
     except jwt.PyJWTError as exc:
         logger.info("token rejected: %s", type(exc).__name__)
