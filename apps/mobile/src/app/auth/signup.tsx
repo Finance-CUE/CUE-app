@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SignupScreen } from '@/features/auth/screens/SignupScreen';
 import { useSignup } from '@/features/auth/hooks';
 import { toErrorMessage } from '@/lib/api';
+import { useAssessmentStore } from '@/features/assessment/store';
 
 export default function SignupRoute() {
   const router = useRouter();
@@ -30,8 +31,12 @@ export default function SignupRoute() {
             password,
           },
           {
-            onSuccess: () => {
-              router.replace('/explore');
+            onSuccess: async (session) => {
+              // Signup is the only path that requires the assessment. Marked
+              // before navigating so a relaunch mid-quiz resumes it. Login
+              // never sets this flag.
+              await useAssessmentStore.getState().markPending(session.user.id);
+              router.replace('/assessment');
             },
             onError: (error) => {
               setErrorMessage(
