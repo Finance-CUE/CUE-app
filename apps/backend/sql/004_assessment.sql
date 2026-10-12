@@ -91,4 +91,12 @@ create policy assessment_results_select_own on public.assessment_results
 revoke all on table public.assessment_responses from anon, authenticated;
 revoke all on table public.assessment_results from anon, authenticated;
 
+-- 5. Stop clients writing their own profile -----------------------------------
+
+-- 001 lets an authenticated user update their own public.users row through
+-- PostgREST. Now that archetype, has_completed_assessment and money_why live
+-- there, that would let a user forge their archetype with their own JWT. Only
+-- the backend (secret key, own grants) writes profiles; reads stay via policy.
+revoke update on table public.users from authenticated;
+
 commit;
