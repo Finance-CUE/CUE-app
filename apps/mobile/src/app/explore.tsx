@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuthStore } from '@/features/auth/store';
+import { useAssessmentGate } from '@/features/assessment/hooks';
 
 /**
  * Placeholder landing screen for anything that has no real next page yet.
@@ -22,6 +23,7 @@ export default function DevLandingScreen() {
   const signOut = useAuthStore((state) => state.signOut);
 
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const gate = useAssessmentGate();
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
@@ -30,6 +32,15 @@ export default function DevLandingScreen() {
     await signOut();
     router.replace('/');
   };
+
+  // Non-skippable for signup users: nothing past the assessment until it is done.
+  if (gate === 'loading') {
+    return null;
+  }
+
+  if (gate === 'required') {
+    return <Redirect href="/assessment" />;
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 24 }]}>

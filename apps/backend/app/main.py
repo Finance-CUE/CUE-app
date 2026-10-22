@@ -10,6 +10,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.features.assessment.repository import AssessmentRepository, AssessmentStoreError
 from app.features.auth.router import limiter
 from app.features.auth.service import (
     AccountExistsError,
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
     async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
         app.state.auth_client = SupabaseAuthClient(settings, client)
         app.state.jwk_client = PyJWKClient(settings.supabase_jwks_url, cache_keys=True)
+        app.state.assessment_repo = AssessmentRepository(settings, client)
         yield
 
 
@@ -52,7 +54,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -83,6 +85,11 @@ async def _upstream_rate_limited(request: Request, exc: UpstreamRateLimitError) 
 
 @app.exception_handler(UpstreamAuthError)
 async def _upstream_failure(request: Request, exc: UpstreamAuthError) -> JSONResponse:
+    return _error(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+
+
+@app.exception_handler(AssessmentStoreError)
+async def _assessment_store_failure(request: Request, exc: AssessmentStoreError) -> JSONResponse:
     return _error(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
 
 

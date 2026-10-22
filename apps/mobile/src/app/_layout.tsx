@@ -17,17 +17,20 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuthStore } from '@/features/auth/store';
+import { useAssessmentStore } from '@/features/assessment/store';
 
 const CUE_BACKGROUND = '#FAF8F6';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const restore = useAuthStore((state) => state.restore);
+  const hydrateAssessment = useAssessmentStore((state) => state.hydrate);
 
   // Rehydrate the session from the keychain once, on cold start.
   useEffect(() => {
     restore();
-  }, [restore]);
+    hydrateAssessment();
+  }, [restore, hydrateAssessment]);
 
   useEffect(() => {
     const configureSystemUI = async () => {
@@ -58,8 +61,9 @@ export default function RootLayout() {
               contentStyle: {
                 backgroundColor: CUE_BACKGROUND,
               },
-            }}
-          />
+            }}>
+            <Stack.Screen name="assessment/index" options={{ gestureEnabled: false }} />
+          </Stack>
         </ThemeProvider>
       </AppProviders>
     </SafeAreaProvider>
