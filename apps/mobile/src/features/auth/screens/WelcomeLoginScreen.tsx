@@ -21,7 +21,7 @@ export function WelcomeLoginScreen() {
       },
       {
         onSuccess: () => {
-          router.replace('/explore');
+          router.replace('/today');
         },
         onError: (error) => {
           // The backend answers a wrong password and an unregistered address
