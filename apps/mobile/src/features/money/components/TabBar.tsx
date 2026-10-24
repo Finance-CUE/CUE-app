@@ -1,4 +1,4 @@
-import { Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
 
@@ -36,27 +36,34 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
         };
 
         return (
-          <TouchableOpacity
-            key={route.key}
-            accessibilityRole="button"
-            accessibilityState={{ selected: focused }}
-            onPress={onPress}
-            style={{ flex: 1, alignItems: 'center' }}>
-            <View
-              style={{
-                alignItems: 'center',
-                gap: 2,
-                paddingVertical: 6,
-                paddingHorizontal: 18,
-                borderRadius: 16,
-                backgroundColor: focused ? COLORS.purpleSoft : 'transparent',
-              }}>
+          // The pill is the touchable itself: a plain View child here rendered
+          // square on Android, ignoring borderRadius.
+          <View key={route.key} style={styles.slot}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityState={{ selected: focused }}
+              onPress={onPress}
+              style={[styles.pill, focused ? styles.pillActive : null]}>
               <Icon color={color} />
-              <Text style={{ fontSize: 11, fontWeight: focused ? '600' : '500', color }}>{LABELS[name]}</Text>
-            </View>
-          </TouchableOpacity>
+              <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 11, fontWeight: focused ? '600' : '500', color }}>{LABELS[name]}</Text>
+            </TouchableOpacity>
+          </View>
         );
       })}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  slot: { flex: 1, alignItems: 'center' },
+  pill: {
+    width: 72,
+    minHeight: 48,
+    paddingVertical: 6,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  pillActive: { backgroundColor: COLORS.purpleSoft },
+});

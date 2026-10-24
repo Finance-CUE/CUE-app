@@ -7,7 +7,7 @@ import { fetchResult } from '@/features/assessment/api';
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
 import { PlusIcon } from '../components/icons';
-import { Card, ScreenHeader, ScreenScroll, SecondaryButton } from '../components/ui';
+import { Card, ScreenHeader, ScreenScroll, SecondaryButton, useProfileAvatar } from '../components/ui';
 import { useNudges, useSaveNudges } from '../hooks';
 import type { Nudges } from '../types';
 
@@ -35,7 +35,7 @@ export function YouScreen() {
   const [pending, setPending] = useState<Partial<Nudges>>({});
 
   const name = user?.full_name?.trim() || 'there';
-  const letter = (user?.full_name?.trim()?.[0] ?? 'C').toUpperCase();
+  const { avatarLetter } = useProfileAvatar();
   const primary = result.data?.primary;
   const taken = takenLabel(result.data?.computed_at ?? null);
 
@@ -53,7 +53,7 @@ export function YouScreen() {
 
   return (
     <ScreenScroll>
-      <ScreenHeader eyebrow="Your profile" title={name} avatarLetter={letter} avatarColor={COLORS.sage} />
+      <ScreenHeader eyebrow="Your profile" title={name} avatarLetter={avatarLetter} />
 
       <Card style={{ borderLeftWidth: 4, borderLeftColor: COLORS.purple }}>
         {result.isError ? (
@@ -79,7 +79,7 @@ export function YouScreen() {
       <SecondaryButton label="Retake assessment" onPress={() => router.push('/assessment?retake=1')} />
 
       <Card>
-        <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.text, marginBottom: 6 }}>Nudge preferences</Text>
+        <Text style={{ fontSize: 18, color: COLORS.text, marginBottom: 6, fontFamily: HEADING_FONT }}>Nudge preferences</Text>
         {NUDGE_ROWS.map((r) => (
           <View key={r.key} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}>
             <View style={{ flex: 1 }}>
@@ -90,14 +90,16 @@ export function YouScreen() {
               value={pending[r.key] ?? nudges.data?.[r.key] ?? true}
               disabled={!nudges.data || save.isPending}
               onValueChange={(v) => toggle(r.key, v)}
-              trackColor={{ true: COLORS.purple }}
+              thumbColor={COLORS.white}
+              trackColor={{ true: COLORS.purple, false: COLORS.track }}
+              ios_backgroundColor={COLORS.track}
             />
           </View>
         ))}
       </Card>
 
       <Card>
-        <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.text, marginBottom: 6 }}>Linked accounts</Text>
+        <Text style={{ fontSize: 18, color: COLORS.text, marginBottom: 6, fontFamily: HEADING_FONT }}>Linked accounts</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 15, fontWeight: '500', color: COLORS.text }}>Manual entries only</Text>

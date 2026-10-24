@@ -1,3 +1,5 @@
+import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -13,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { useAuthStore } from '@/features/auth/store';
 import { PlusIcon } from './icons';
 
 export function ScreenScroll({
@@ -41,39 +44,72 @@ export function ScreenHeader({
   title,
   avatarLetter,
   avatarColor = COLORS.purple,
+  avatarUri,
+  onAvatarPress,
+  avatarName,
 }: {
   eyebrow: string;
   title: string;
   avatarLetter?: string;
   avatarColor?: string;
+  avatarUri?: string;
+  onAvatarPress?: () => void;
+  avatarName?: string;
 }) {
+  const avatarStyle: ViewStyle = {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: avatarColor,
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+  const avatarContent = avatarUri ? (
+    <Image source={{ uri: avatarUri }} style={{ width: 44, height: 44 }} />
+  ) : (
+    <Text style={{ color: COLORS.white, fontSize: 18, fontWeight: '600' }}>{avatarLetter}</Text>
+  );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 14, color: COLORS.muted }}>{eyebrow}</Text>
         <Text style={{ fontSize: 28, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>{title}</Text>
       </View>
-      {avatarLetter ? (
-        <View
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            backgroundColor: avatarColor,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-          <Text style={{ color: COLORS.white, fontSize: 18, fontWeight: '600' }}>{avatarLetter}</Text>
-        </View>
+      {avatarLetter || avatarUri ? (
+        onAvatarPress ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={avatarName ? `Your profile, ${avatarName}` : 'Your profile'}
+            hitSlop={4}
+            onPress={onAvatarPress}
+            activeOpacity={0.7}
+            style={avatarStyle}>
+            {avatarContent}
+          </TouchableOpacity>
+        ) : (
+          <View style={avatarStyle}>{avatarContent}</View>
+        )
       ) : null}
     </View>
   );
 }
 
+/** Props for ScreenHeader's avatar on tabs that link to the You tab. */
+export function useProfileAvatar() {
+  const router = useRouter();
+  const fullName = useAuthStore((s) => s.user?.full_name)?.trim() ?? '';
+  return {
+    avatarLetter: (fullName[0] ?? 'C').toUpperCase(),
+    avatarName: fullName,
+    onAvatarPress: () => router.navigate('/you'),
+  };
+}
+
 export function SectionHeader({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.text }}>{title}</Text>
+      <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.text, fontFamily: HEADING_FONT }}>{title}</Text>
       {right}
     </View>
   );

@@ -21,4 +21,4 @@ export const COLORS = {
   linkOnDark: '#B9AFE6',
 } as const;
 
-export const HEADING_FONT = Platform.OS === 'ios' ? 'Georgia' : undefined;
+export const HEADING_FONT = Platform.select({ ios: 'Georgia', android: 'serif', default: undefined });

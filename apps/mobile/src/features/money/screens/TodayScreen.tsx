@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
 import { CategoryIcon, ClockIcon, RupeeIcon, SparkIcon, SwapIcon } from '../components/icons';
-import { Card, EmptyCard, Fab, Row, ScreenHeader, SectionHeader } from '../components/ui';
+import { Card, EmptyCard, Fab, Row, ScreenHeader, SectionHeader, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
 import { daysUntil, greeting, startOfWeek, toISODate, weekDays } from '../dates';
 import { formatRupees } from '../format';
@@ -66,6 +66,7 @@ export function TodayScreen() {
   };
 
   const first = fullName.split(/\s+/)[0];
+  const avatar = useProfileAvatar();
   const byDay = (iso: string) => (spends.data ?? []).filter((s) => s.spent_on === iso);
   const total = (iso: string) => byDay(iso).reduce((sum, s) => sum + s.amount_paise, 0);
   const totals = days.map((d) => total(toISODate(d)));
@@ -93,7 +94,7 @@ export function TodayScreen() {
         <ScreenHeader
           eyebrow={greeting(now)}
           title={first ? `Hi, ${first}` : 'Hi there'}
-          avatarLetter={(first?.[0] ?? 'C').toUpperCase()}
+          {...avatar}
         />
 
         <View style={{ backgroundColor: COLORS.cardDark, borderRadius: 22, padding: 20, gap: 10 }}>
@@ -168,7 +169,7 @@ export function TodayScreen() {
                   {days.map((d, i) => {
                     const iso = toISODate(d);
                     const isToday = iso === todayISO;
-                    const h = totals[i] > 0 ? Math.max(6, (totals[i] / weekMax) * BAR_MAX) : 4;
+                    const h = totals[i] > 0 ? Math.max(8, (totals[i] / weekMax) * BAR_MAX) : 4;
                     return (
                       <TouchableOpacity
                         key={iso}
@@ -179,9 +180,9 @@ export function TodayScreen() {
                         style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6, height: BAR_MAX + 24 }}>
                         <View
                           style={{
-                            width: '100%',
+                            width: 14,
                             height: h,
-                            borderRadius: 6,
+                            borderRadius: 7,
                             backgroundColor: totals[i] > 0 || isToday ? COLORS.purple : COLORS.track,
                           }}
                         />

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
-import { Card, EmptyCard, Fab, Row, ScreenHeader, ScreenScroll, SectionHeader } from '../components/ui';
+import { Card, EmptyCard, Fab, Row, ScreenHeader, ScreenScroll, SectionHeader, useProfileAvatar } from '../components/ui';
 import { formatRupees } from '../format';
 import { useDeleteKhata, useKhata, useSettleKhata } from '../hooks';
 import { EntryDetailSheet } from '../sheets/EntryDetailSheet';
@@ -12,6 +12,7 @@ import type { Direction, KhataEntry } from '../types';
 
 export function KhataScreen() {
   const queryClient = useQueryClient();
+  const avatar = useProfileAvatar();
   const [refreshing, setRefreshing] = useState(false);
   const refresh = async () => {
     setRefreshing(true);
@@ -66,7 +67,7 @@ export function KhataScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScreenScroll refreshing={refreshing} onRefresh={refresh}>
-        <ScreenHeader eyebrow="The quiet ledger" title="Khata" />
+        <ScreenHeader eyebrow="The quiet ledger" title="Khata" {...avatar} />
         {section('People owe you', 'lent', 'No one owes you anything right now.')}
         {section('You owe', 'borrowed', "You don't owe anyone right now.")}
         <Card style={{ backgroundColor: COLORS.sageTint, borderColor: COLORS.sageTint, borderRadius: 22, padding: 22 }}>

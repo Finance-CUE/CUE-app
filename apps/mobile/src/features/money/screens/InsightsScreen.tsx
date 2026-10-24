@@ -4,7 +4,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 
 import { COLORS } from '@/features/assessment/theme';
 import { CategoryIcon } from '../components/icons';
-import { Card, EmptyCard, Row, ScreenHeader, ScreenScroll, SectionHeader } from '../components/ui';
+import { Card, EmptyCard, Row, ScreenHeader, ScreenScroll, SectionHeader, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
 import { monthRange, toISODate, weekDays } from '../dates';
 import { formatRupees } from '../format';
@@ -20,6 +20,7 @@ const Total = ({ paise }: { paise: number }) => (
 
 export function InsightsScreen() {
   const queryClient = useQueryClient();
+  const avatar = useProfileAvatar();
   const [refreshing, setRefreshing] = useState(false);
   const refresh = async () => {
     setRefreshing(true);
@@ -59,7 +60,7 @@ export function InsightsScreen() {
 
   return (
     <ScreenScroll refreshing={refreshing} onRefresh={refresh}>
-      <ScreenHeader eyebrow={eyebrow} title="Insights" />
+      <ScreenHeader eyebrow={eyebrow} title="Insights" {...avatar} />
 
       <Card style={{ backgroundColor: COLORS.purpleSoft, borderColor: COLORS.purpleSoft, borderRadius: 22 }}>
         <Text style={{ fontSize: 14, color: COLORS.text }}>CUE will start noticing patterns as you use it.</Text>
