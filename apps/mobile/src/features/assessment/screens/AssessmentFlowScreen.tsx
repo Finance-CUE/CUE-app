@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigation, useRouter } from 'expo-router';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import {
@@ -22,9 +22,11 @@ import { QuestionScreen } from '@/features/assessment/screens/QuestionScreen';
 import { ResultsScreen } from '@/features/assessment/screens/ResultsScreen';
 import { useAssessmentStore } from '@/features/assessment/store';
 import { COLORS } from '@/features/assessment/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AssessmentResult } from '@/features/assessment/types';
 import { useAuthStore } from '@/features/auth/store';
 import { toErrorMessage } from '@/lib/api';
+import { queryClient } from '@/lib/queryClient';
 
 type Phase = 'loading' | 'intro' | 'question' | 'analyzing' | 'results' | 'failed';
 
@@ -35,8 +37,10 @@ const TOTAL_STEPS = QUESTIONS.length + 1;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export function AssessmentFlowScreen() {
+export function AssessmentFlowScreen({ retake = false }: { retake?: boolean }) {
   const router = useRouter();
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const clearPending = useAssessmentStore((state) => state.clear);
 
   const [phase, setPhase] = useState<Phase>('loading');
@@ -49,16 +53,29 @@ export function AssessmentFlowScreen() {
   const inFlight = useRef(false);
   const signOut = useAuthStore((state) => state.signOut);
 
-  // The assessment cannot be backed out of on Android; iOS swipe-back is
-  // disabled on the route in _layout.tsx.
+  // First-time signup cannot back out of the quiz (Android back swallowed; iOS
+  // swipe-back disabled on the route in _layout.tsx). A retake can.
   useEffect(() => {
+    if (retake) {
+      navigation.setOptions({ gestureEnabled: true });
+      return;
+    }
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => true);
     return () => subscription.remove();
-  }, []);
+  }, [retake, navigation]);
 
   const load = useCallback(async () => {
     setPhase('loading');
     try {
+      if (retake) {
+        // Retake starts clean: ignore the existing result and any saved progress.
+        setAnswers({});
+        setMoneyWhy(null);
+        setIndex(0);
+        setPhase('intro');
+        return;
+      }
+
       // A result already exists when the app was killed after `complete`
       // succeeded but before the pending flag was cleared.
       const existing = await fetchResult();
@@ -79,7 +96,7 @@ export function AssessmentFlowScreen() {
     } catch {
       setPhase('failed');
     }
-  }, [clearPending]);
+  }, [clearPending, retake]);
 
   useEffect(() => {
     load();
@@ -105,6 +122,7 @@ export function AssessmentFlowScreen() {
         setPhase('analyzing');
         const [finished] = await Promise.all([completeAssessment(moneyWhy), wait(MIN_ANALYZING_MS)]);
         await clearPending();
+        await queryClient.invalidateQueries({ queryKey: ['assessment', 'result'] });
         setResult(finished);
         setPhase('results');
       }
@@ -146,8 +164,24 @@ export function AssessmentFlowScreen() {
     );
   }
 
+  // Retake only: a way out of the quiz.
+  const withCancel = (screen: ReactNode) =>
+    retake ? (
+      <View style={{ flex: 1 }}>
+        {screen}
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => router.back()}
+          style={[styles.cancel, { top: insets.top + 8 }]}>
+          <Text style={styles.signOutLabel}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    ) : (
+      screen
+    );
+
   if (phase === 'intro') {
-    return <IntroScreen onStart={() => setPhase('question')} />;
+    return withCancel(<IntroScreen onStart={() => setPhase('question')} />);
   }
 
   if (phase === 'analyzing') {
@@ -155,11 +189,11 @@ export function AssessmentFlowScreen() {
   }
 
   if (phase === 'results' && result) {
-    return <ResultsScreen result={result} onEnter={() => router.replace('/explore')} />;
+    return <ResultsScreen result={result} onEnter={() => (retake ? router.back() : router.replace('/today'))} />;
   }
 
   if (index === MONEY_WHY_INDEX) {
-    return (
+    return withCancel(
       <QuestionScreen
         part={MONEY_WHY_PART}
         step={TOTAL_STEPS}
@@ -171,13 +205,13 @@ export function AssessmentFlowScreen() {
         onContinue={handleContinue}
         isSubmitting={isSubmitting}
         error={error}
-      />
+      />,
     );
   }
 
   const question = QUESTIONS[index];
 
-  return (
+  return withCancel(
     <QuestionScreen
       part={question.part}
       step={index + 1}
@@ -189,7 +223,7 @@ export function AssessmentFlowScreen() {
       onContinue={handleContinue}
       isSubmitting={isSubmitting}
       error={error}
-    />
+    />,
   );
 }
 
@@ -212,6 +246,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.text,
   },
   retryLabel: { fontSize: 15, fontWeight: '600', color: COLORS.white },
+  cancel: { position: 'absolute', right: 16, height: 44, paddingHorizontal: 8, justifyContent: 'center' },
   signOut: { marginTop: 12, height: 44, justifyContent: 'center' },
   signOutLabel: { fontSize: 14, color: COLORS.muted },
 });

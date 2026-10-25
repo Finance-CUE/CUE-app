@@ -24,4 +24,5 @@ def to_response(score: AssessmentScore) -> ResultResponse:
         secondary=_card(score.secondary),
         tertiary=_card(score.tertiary),
         scoring_version=score.version,
+        computed_at=score.computed_at,
     )
