@@ -4,12 +4,13 @@ Run: cd apps/backend && python -m pytest tests/test_money_api.py -v
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies.auth import get_current_claims
+from app.features.assessment.router import get_assessment_repo
 from app.features.auth.router import limiter
 from app.features.money.repository import MoneyStoreError
 from app.features.money.router import get_money_repo
@@ -45,6 +46,7 @@ class FakeRepo:
         self.subs: dict[str, list[Subscription]] = {}
         self.assets: dict[str, list[Asset]] = {}
         self.nudges: dict[str, Nudges] = {}
+        self.list_calls: list[tuple] = []
 
     @staticmethod
     def _drop(rows: list, entity_id: str) -> bool:
@@ -60,6 +62,7 @@ class FakeRepo:
         return spend
 
     async def list_spends(self, user_id, start, end):
+        self.list_calls.append((user_id, start, end))
         return [s for s in self.spends.get(user_id, []) if start <= s.spent_on <= end]
 
     async def delete_spend(self, user_id, spend_id):
@@ -166,6 +169,7 @@ def test_every_money_route_requires_a_token():
             c.get(f"{BASE}/summary"),
             c.get(NUDGES),
             c.put(NUDGES, json={}),
+            c.get(f"{NUDGES}/plan"),
         ]
     assert [r.status_code for r in calls] == [401] * len(calls)
 
@@ -323,3 +327,77 @@ def test_subscription_due_date_is_bounded(due):
     body = {"name": "N", "amount_paise": 100, "cadence": "monthly", "next_due_on": due}
     with _client(FakeRepo()) as c:
         assert c.post(f"{BASE}/subscriptions", json=body).status_code == 422
+
+
+class FakeAssessmentRepo:
+    def __init__(self, primary: str | None = None) -> None:
+        self.primary = primary
+
+    async def get_latest_result(self, user_id):
+        return None if self.primary is None else type("S", (), {"primary": self.primary})()
+
+
+def _seed_pattern(repo: FakeRepo) -> None:
+    from app.features.money.nudges import IST
+
+    today = datetime.now(IST).date()
+    repo.spends[USER_A] = [
+        Spend(
+            id=str(i), description="Zomato", amount_paise=30000, category="food",
+            spent_on=today - timedelta(days=i), created_at=_now(),
+        )  # fmt: skip
+        for i in range(3)
+    ]
+
+
+def test_nudge_plan_returns_pattern_nudge_with_archetype_copy():
+    repo = FakeRepo()
+    _seed_pattern(repo)
+    with _client(repo) as c:
+        app.dependency_overrides[get_assessment_repo] = lambda: FakeAssessmentRepo("optimizer")
+        body = c.get(f"{NUDGES}/plan").json()
+    assert len(body) >= 1 and body[0]["kind"] == "pattern"
+    assert set(body[0]) == {"id", "kind", "title", "body", "fire_at"}
+    assert body[0]["id"].startswith("pattern:zomato:")
+    assert "₹900" in body[0]["body"] or "₹900" in body[0]["title"]
+    assert body[0]["fire_at"].endswith("+05:30")
+
+
+def test_nudge_plan_without_assessment_or_spends():
+    with _client(FakeRepo()) as c:
+        app.dependency_overrides[get_assessment_repo] = lambda: FakeAssessmentRepo(None)
+        assert c.get(f"{NUDGES}/plan").json() == []
+    repo = FakeRepo()
+    _seed_pattern(repo)
+    with _client(repo) as c:
+        app.dependency_overrides[get_assessment_repo] = lambda: FakeAssessmentRepo(None)
+        assert c.get(f"{NUDGES}/plan").json()[0]["kind"] == "pattern"  # default copy
+
+
+def _plan(repo: FakeRepo, user: str = USER_A) -> list:
+    with _client(repo, user) as c:
+        app.dependency_overrides[get_assessment_repo] = lambda: FakeAssessmentRepo(None)
+        return c.get(f"{NUDGES}/plan").json()
+
+
+def test_nudge_plan_is_scoped_to_the_caller():
+    repo = FakeRepo()
+    _seed_pattern(repo)
+    assert _plan(repo, USER_B) == []
+    assert _plan(repo, USER_A)
+
+
+def test_nudge_plan_empty_when_both_prefs_off():
+    repo = FakeRepo()
+    _seed_pattern(repo)
+    repo.nudges[USER_A] = Nudges(pre_spend=False, patterns=False, weekly=True)
+    assert _plan(repo) == []
+
+
+def test_nudge_plan_reads_last_28_ist_days():
+    from app.features.money.nudges import IST
+
+    repo = FakeRepo()
+    _plan(repo)
+    today = datetime.now(IST).date()
+    assert repo.list_calls == [(USER_A, today - timedelta(days=27), today)]

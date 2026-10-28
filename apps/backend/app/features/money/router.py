@@ -5,12 +5,13 @@ router's limiter. Request bodies are never logged.
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
-from app.features.assessment.router import UserId
+from app.features.assessment.repository import AssessmentRepository
+from app.features.assessment.router import UserId, get_assessment_repo
 from app.features.auth.router import limiter
 from app.features.money.repository import MoneyRepository
 from app.features.money.schemas import (
@@ -21,6 +22,7 @@ from app.features.money.schemas import (
     MoneySummary,
     Nudges,
     NudgesPut,
+    PlannedNudge,
     Spend,
     SpendCreate,
     StartingMoney,
@@ -29,6 +31,7 @@ from app.features.money.schemas import (
     SubscriptionCreate,
 )
 from app.features.money.schemas import MAX_DATE, MIN_DATE
+from app.features.money.nudges import HISTORY_DAYS, IST, build_plan
 from app.features.money.service import net_worth, roll_forward
 
 router = APIRouter(prefix="/money", tags=["money"])
@@ -217,3 +220,19 @@ async def put_nudges(
     request: Request, payload: NudgesPut, user_id: UserId, repo: Repo
 ) -> Nudges:
     return await repo.put_nudges(user_id, payload)
+
+
+@profile_router.get("/nudges/plan")
+@limiter.limit("120/minute")
+async def nudge_plan(
+    request: Request,
+    user_id: UserId,
+    repo: Repo,
+    assessment_repo: Annotated[AssessmentRepository, Depends(get_assessment_repo)],
+) -> list[PlannedNudge]:
+    now = datetime.now(IST)
+    start = now.date() - timedelta(days=HISTORY_DAYS - 1)
+    spends = await repo.list_spends(user_id, start, now.date())
+    prefs = await repo.get_nudges(user_id)
+    result = await assessment_repo.get_latest_result(user_id)
+    return build_plan(spends, result.primary if result else None, prefs, now)

@@ -134,3 +134,11 @@ class Nudges(BaseModel):
     pre_spend: bool
     patterns: bool
     weekly: bool
+
+
+class PlannedNudge(BaseModel):
+    id: str
+    kind: Literal["pattern", "pre_spend"]
+    title: str
+    body: str
+    fire_at: datetime
