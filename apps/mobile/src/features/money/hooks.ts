@@ -26,6 +26,9 @@ export const useAssets = () =>
 export const useNudges = () =>
   useQuery({ queryKey: ['profile', 'nudges'], queryFn: moneyApi.fetchNudges });
 
+export const useNudgePlan = (enabled = true) =>
+  useQuery({ queryKey: ['money', 'nudge-plan'], queryFn: moneyApi.fetchNudgePlan, enabled });
+
 /** retry: 0 so a timeout never silently double-posts; success refreshes all money data. */
 function useMoneyMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>) {
   const queryClient = useQueryClient();
@@ -52,6 +55,10 @@ export function useSaveNudges() {
   return useMutation({
     mutationFn: moneyApi.putNudges,
     retry: 0,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['profile', 'nudges'] }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['profile', 'nudges'] }),
+        queryClient.invalidateQueries({ queryKey: ['money', 'nudge-plan'] }),
+      ]),
   });
 }

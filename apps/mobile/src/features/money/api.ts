@@ -6,6 +6,7 @@ import type {
   KhataInput,
   MoneySummary,
   Nudges,
+  PlannedNudge,
   Spend,
   SpendInput,
   StartingMoney,
@@ -86,6 +87,11 @@ export async function deleteAsset(id: string): Promise<void> {
 
 export async function fetchNudges(): Promise<Nudges> {
   const result = await api.get<Nudges>('/profile/nudges');
+  return result.data;
+}
+
+export async function fetchNudgePlan(): Promise<PlannedNudge[]> {
+  const result = await api.get<PlannedNudge[]>('/profile/nudges/plan');
   return result.data;
 }
 

@@ -63,6 +63,15 @@ export type Nudges = {
   weekly: boolean;
 };
 
+export type PlannedNudge = {
+  id: string;
+  kind: 'pattern' | 'pre_spend';
+  title: string;
+  body: string;
+  /** ISO 8601 with +05:30 offset. */
+  fire_at: string;
+};
+
 export type SpendInput = {
   description: string;
   amount_paise: number;
