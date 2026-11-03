@@ -15,7 +15,7 @@ export default function Index() {
   }
 
   if (status === 'authenticated') {
-    return <Redirect href={gate === 'required' ? '/assessment' : '/explore'} />;
+    return <Redirect href={gate === 'required' ? '/assessment' : '/today'} />;
   }
 
   return <WelcomeLoginScreen />;

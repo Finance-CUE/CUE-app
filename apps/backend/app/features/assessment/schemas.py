@@ -4,6 +4,7 @@ Request models are strict: no type coercion ("3" and 3.5 are rejected for an
 integer response) and no unknown fields.
 """
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
@@ -60,3 +61,4 @@ class ResultResponse(BaseModel):
     secondary: ArchetypeCard
     tertiary: ArchetypeCard
     scoring_version: str
+    computed_at: datetime | None

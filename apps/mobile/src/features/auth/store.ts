@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { setSessionExpiredHandler } from '@/lib/api';
+import { queryClient } from '@/lib/queryClient';
 import * as authApi from '@/features/auth/api';
 import {
   clearTokens,
@@ -19,12 +20,18 @@ interface AuthState {
   signOut: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'restoring',
   user: null,
 
   setSession: async (session) => {
     await saveTokens(session.access_token, session.refresh_token);
+    // Query keys carry no user id, so a different user must start from an
+    // empty cache. Cleared synchronously before `set` so no screen renders
+    // the previous user's data.
+    if (get().user?.id !== session.user.id) {
+      queryClient.clear();
+    }
     set({ status: 'authenticated', user: session.user });
   },
 
@@ -57,11 +64,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     await clearTokens();
+    queryClient.clear();
     set({ status: 'unauthenticated', user: null });
   },
 }));
 
 // A refresh failure anywhere in the app drops straight to signed out.
 setSessionExpiredHandler(() => {
+  queryClient.clear();
   useAuthStore.setState({ status: 'unauthenticated', user: null });
 });
