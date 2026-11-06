@@ -10,6 +10,7 @@
     "axios": "^1.18.1",
     "expo": "~57.0.12",
     "expo-constants": "~57.0.10",
+    "expo-contacts": "~57.0.8",
     "expo-device": "~57.0.1",
     "expo-font": "~57.0.1",
     "expo-glass-effect": "~57.0.1",
@@ -53,7 +54,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "node --test --experimental-strip-types \"src/**/*.test.ts\""
   },
   "private": true
 }
