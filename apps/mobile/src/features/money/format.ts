@@ -6,6 +6,9 @@ const MAX_PAISE = 10_000_000_000;
  */
 export function parseRupeesToPaise(text: string): number | null {
   const cleaned = text.replace(/[₹\s]/g, '');
+  if (cleaned.split('.').length > 2) {
+    return null;
+  }
   const [whole = '', frac] = cleaned.split('.');
   // Commas only in valid Indian (1,00,000) or Western (100,000) grouping.
   if (whole.includes(',') && !/^(\d{1,2}(,\d{2})*,\d{3}|\d{1,3}(,\d{3})+)$/.test(whole)) {
@@ -30,11 +33,11 @@ function groupIndian(whole: number): string {
   return `${head},${digits.slice(-3)}`;
 }
 
-/** `₹1,00,000`, `₹120.50`, negatives as `−₹500` (U+2212). */
+/** `₹1,00,000.00`, `₹120.50`, negatives as `−₹500` (U+2212). */
 export function formatRupees(paise: number): string {
   const abs = Math.abs(paise);
   const whole = Math.floor(abs / 100);
   const rest = abs % 100;
-  const body = `₹${groupIndian(whole)}${rest ? `.${String(rest).padStart(2, '0')}` : ''}`;
+  const body = `₹${groupIndian(whole)}.${String(rest).padStart(2, '0')}`;
   return paise < 0 ? `−${body}` : body;
 }
