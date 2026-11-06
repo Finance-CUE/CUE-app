@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 type IconProps = { color: string; size?: number };
-type CategorySlug = 'food' | 'groceries' | 'transport' | 'shopping' | 'bills' | 'fun' | 'other';
+type CategorySlug = 'food' | 'groceries' | 'transport' | 'shopping' | 'bills' | 'subscription' | 'fun' | 'other';
 
 function Icon({ color, size = 22, children }: IconProps & { children: ReactNode }) {
   return (
@@ -71,18 +71,13 @@ export const ClockIcon = (p: IconProps) => (
   </Icon>
 );
 
-export const SparkIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <Path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" />
-  </Icon>
-);
-
 const CATEGORY_PATHS: Record<CategorySlug, string> = {
   food: 'M7 3v7a2 2 0 0 0 4 0V3M9 10v11M17 3c-2 2-3 5-3 8h3v10',
   groceries: 'M3 4h3l2 11h10l2-8H7M10 20h.01M17 20h.01',
   transport: 'M5 16V8a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8H5zM5 12h14M8 19v-3M16 19v-3',
   shopping: 'M6 8h12l1 12H5L6 8zM9 8a3 3 0 0 1 6 0',
   bills: 'M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 8h6M9 12h6',
+  subscription: 'M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4',
   fun: 'M12 3l2.7 5.5 6 .9-4.4 4.2 1 6-5.3-2.8L6.7 19.6l1-6L3.3 9.4l6-.9L12 3z',
   other: 'M5 12h.01M12 12h.01M19 12h.01',
 };
