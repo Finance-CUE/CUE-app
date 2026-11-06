@@ -7,6 +7,7 @@ Never log request or response bodies: they hold the user's money.
 """
 
 import logging
+import re
 import uuid
 from datetime import UTC, date, datetime
 from typing import Any
@@ -15,10 +16,10 @@ import httpx
 
 from app.core.config import Settings
 from app.features.money.schemas import (
-    Asset,
-    AssetCreate,
+    BalanceSnapshot,
     KhataCreate,
     KhataEntry,
+    NudgeTemplate,
     Nudges,
     NudgesPut,
     Spend,
@@ -37,6 +38,10 @@ _PAGE = 1000  # must not exceed the project's PostgREST "Max rows"
 
 class MoneyStoreError(Exception):
     """The money store was unreachable or rejected a request."""
+
+
+class MoneyConflictError(MoneyStoreError):
+    """The store refused a write on a unique constraint (HTTP 409)."""
 
 
 def _uid(value: str) -> str:
@@ -81,6 +86,8 @@ class MoneyRepository:
         except httpx.HTTPError as exc:
             # Class of failure only; the body can echo the user's data.
             logger.error("money store %s %s failed: %s", method, table, type(exc).__name__)
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 409:
+                raise MoneyConflictError("Conflict.") from exc
             raise MoneyStoreError("Money service unavailable.") from exc
         return response.json() if response.content else None
 
@@ -131,7 +138,9 @@ class MoneyRepository:
     # Spends ------------------------------------------------------------------
 
     async def add_spend(self, user_id: str, data: SpendCreate) -> Spend:
-        return Spend(**await self._insert("spends", user_id, data.model_dump(mode="json")))
+        # billing_day belongs to subscriptions, not the spends table.
+        body = data.model_dump(mode="json", exclude={"billing_day"})
+        return Spend(**await self._insert("spends", user_id, body))
 
     async def list_spends(self, user_id: str, start: date, end: date) -> list[Spend]:
         rows = await self._list(
@@ -145,18 +154,21 @@ class MoneyRepository:
     async def delete_spend(self, user_id: str, spend_id: str) -> bool:
         return await self._delete("spends", user_id, spend_id)
 
-    async def sum_spends_since(self, user_id: str, since: datetime) -> int:
-        # ponytail: pages rows and sums in Python; move to an rpc when volumes grow.
-        rows = await self._get_all(
-            "spends",
-            {
-                "user_id": f"eq.{_uid(user_id)}",
-                "select": "amount_paise",
-                "created_at": f"gte.{since.isoformat()}",
-                "order": "id.asc",
+    async def add_subscription_spend(self, user_id: str, data: SpendCreate) -> Spend:
+        row = await self._request(
+            "POST",
+            "rpc/log_subscription_spend",
+            json={
+                "p_user": _uid(user_id),
+                "p_description": data.description,
+                "p_amount": data.amount_paise,
+                "p_spent_on": data.spent_on.isoformat(),
+                "p_billing_day": data.billing_day,
             },
         )
-        return sum(row["amount_paise"] for row in rows)
+        if not row:
+            raise MoneyStoreError("Money service returned no row.")
+        return Spend(**(row[0] if isinstance(row, list) else row))
 
     # Starting money ----------------------------------------------------------
 
@@ -218,7 +230,7 @@ class MoneyRepository:
     # Subscriptions -----------------------------------------------------------
 
     async def list_subscriptions(self, user_id: str) -> list[Subscription]:
-        rows = await self._list("subscriptions", user_id, "next_due_on.asc")
+        rows = await self._list("subscriptions", user_id, "created_at.asc")
         return [Subscription(**row) for row in rows]
 
     async def add_subscription(self, user_id: str, data: SubscriptionCreate) -> Subscription:
@@ -228,17 +240,54 @@ class MoneyRepository:
     async def delete_subscription(self, user_id: str, sub_id: str) -> bool:
         return await self._delete("subscriptions", user_id, sub_id)
 
-    # Assets ------------------------------------------------------------------
+    async def answer_cycle(self, user_id: str, sub_id: str, month: date, active: bool) -> bool:
+        """False when the subscription is not the user's; a repeat answer is a no-op (True)."""
+        result = await self._request(
+            "POST",
+            "rpc/answer_subscription_cycle",
+            json={
+                "p_user": _uid(user_id),
+                "p_subscription": _uid(sub_id),
+                "p_month": month.isoformat(),
+                "p_active": active,
+            },
+        )
+        return result is True
 
-    async def list_assets(self, user_id: str) -> list[Asset]:
-        rows = await self._list("assets", user_id, "created_at.desc")
-        return [Asset(**row) for row in rows]
+    async def list_cycle_months(self, user_id: str) -> dict[str, set[date]]:
+        rows = await self._get_all(
+            "subscription_cycles",
+            {
+                "user_id": f"eq.{_uid(user_id)}",
+                "select": "subscription_id,month",
+                "order": "id.asc",
+            },
+        )
+        months: dict[str, set[date]] = {}
+        for row in rows:
+            months.setdefault(row["subscription_id"], set()).add(date.fromisoformat(row["month"]))
+        return months
 
-    async def add_asset(self, user_id: str, data: AssetCreate) -> Asset:
-        return Asset(**await self._insert("assets", user_id, data.model_dump()))
+    # Balance history and notification templates -------------------------------
 
-    async def delete_asset(self, user_id: str, asset_id: str) -> bool:
-        return await self._delete("assets", user_id, asset_id)
+    async def list_balance_history(self, user_id: str) -> list[BalanceSnapshot]:
+        rows = await self._list("balance_history", user_id, "recorded_at.asc")
+        return [BalanceSnapshot(**row) for row in rows]
+
+    async def list_templates(self, archetypes: list[str]) -> list[NudgeTemplate]:
+        # Slugs go into a PostgREST filter; refuse anything that could alter it.
+        if not all(re.fullmatch(r"[a-z0-9_-]+", a) for a in archetypes):
+            raise ValueError("bad archetype")
+        rows = await self._get_all(
+            "notification_templates",
+            {
+                "archetype": f"in.({','.join(archetypes)})",
+                "active": "eq.true",
+                "select": "archetype,kind,title,body",
+                "order": "id.asc",
+            },
+        )
+        return [NudgeTemplate(**row) for row in rows]
 
     # Nudge preferences (columns on users) ------------------------------------
 
