@@ -1,21 +1,38 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 import { fetchResult } from '@/features/assessment/api';
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
-import { PlusIcon } from '../components/icons';
+import { Sparkline } from '../components/Sparkline';
 import { Card, ScreenHeader, ScreenScroll, SecondaryButton, useProfileAvatar } from '../components/ui';
-import { useNudges, useSaveNudges } from '../hooks';
-import type { Nudges } from '../types';
+import { categoryLabel } from '../categories';
+import { startOfWeek, toISODate } from '../dates';
+import { formatRupees } from '../format';
+import { useNudgePlan, useNudges, useSaveNudges, useSpends, useToday, useTrend } from '../hooks';
+import { weeklyReflection } from '../reflection';
+import type { Nudges, PlannedNudge } from '../types';
 
 const NUDGE_ROWS: { key: keyof Nudges; title: string; subtitle: string }[] = [
   { key: 'pre_spend', title: 'Pre-spend pause', subtitle: 'Before unplanned spends' },
   { key: 'patterns', title: 'Pattern nudges', subtitle: "Only when there's enough evidence" },
   { key: 'weekly', title: 'Weekly reflection', subtitle: 'Sunday evenings' },
 ];
+
+/** "Next: Tue, 7:45 pm" for the soonest planned nudge of these kinds, in device local time. */
+function nextLabel(plan: PlannedNudge[] | undefined, kinds: PlannedNudge['kind'][]): string | undefined {
+  const now = Date.now();
+  const next = (plan ?? [])
+    .filter((n) => kinds.includes(n.kind) && new Date(n.fire_at).getTime() > now)
+    .sort((a, b) => new Date(a.fire_at).getTime() - new Date(b.fire_at).getTime())[0];
+  if (!next) return undefined;
+  const at = new Date(next.fire_at);
+  const day = at.toLocaleDateString('en-IN', { weekday: 'short' });
+  const time = at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `Next: ${day}, ${time}`;
+}
 
 function takenLabel(computedAt: string | null): string | null {
   if (!computedAt) return null;
@@ -30,6 +47,24 @@ export function YouScreen() {
   const signOut = useAuthStore((s) => s.signOut);
   const result = useQuery({ queryKey: ['assessment', 'result'], queryFn: fetchResult });
   const nudges = useNudges();
+  const plan = useNudgePlan(true).data;
+  const now = useToday();
+  const today = toISODate(now);
+  const lastWeekStart = startOfWeek(now);
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  const spends = useSpends(toISODate(lastWeekStart), today).data;
+  const trend = useTrend(today);
+  const reflection = spends ? weeklyReflection(spends, now) : null;
+  const subtitles: Partial<Record<keyof Nudges, string | undefined>> = {
+    pre_spend: nextLabel(plan, ['pre_spend']),
+    patterns: nextLabel(plan, ['pattern', 'spike']),
+    weekly:
+      reflection && reflection.count > 0
+        ? `${formatRupees(reflection.thisWeekPaise)} this week, ${formatRupees(reflection.lastWeekPaise)} last week${
+            reflection.topCategory ? ` · ${categoryLabel(reflection.topCategory)}` : ''
+          }`
+        : undefined,
+  };
   const save = useSaveNudges();
   // Optimistic value for the switch being saved; cleared on settle so errors revert it.
   const [pending, setPending] = useState<Partial<Nudges>>({});
@@ -53,7 +88,12 @@ export function YouScreen() {
 
   return (
     <ScreenScroll>
-      <ScreenHeader eyebrow="Your profile" title={name} avatarLetter={avatarLetter} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{ flex: 1 }}>
+          <ScreenHeader eyebrow="Your profile" title={name} avatarLetter={avatarLetter} />
+        </View>
+        <Sparkline points={trend.data ?? []} onPress={() => router.push('/net-worth' as Href) /* typed routes regenerate on next expo start */} />
+      </View>
 
       <Card style={{ borderLeftWidth: 4, borderLeftColor: COLORS.purple }}>
         {result.isError ? (
@@ -84,7 +124,7 @@ export function YouScreen() {
           <View key={r.key} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 15, fontWeight: '500', color: COLORS.text }}>{r.title}</Text>
-              <Text style={{ fontSize: 12, color: COLORS.muted }}>{r.subtitle}</Text>
+              <Text style={{ fontSize: 12, color: COLORS.muted }}>{subtitles[r.key] ?? r.subtitle}</Text>
             </View>
             <Switch
               value={pending[r.key] ?? nudges.data?.[r.key] ?? true}
@@ -96,23 +136,6 @@ export function YouScreen() {
             />
           </View>
         ))}
-      </Card>
-
-      <Card>
-        <Text style={{ fontSize: 18, color: COLORS.text, marginBottom: 6, fontFamily: HEADING_FONT }}>Linked accounts</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: '500', color: COLORS.text }}>Manual entries only</Text>
-            <Text style={{ fontSize: 12, color: COLORS.muted }}>No bank linked yet</Text>
-          </View>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Link an account"
-            onPress={() => Alert.alert('Coming soon', 'Bank linking is on its way.')}
-            style={{ padding: 8 }}>
-            <PlusIcon color={COLORS.text} size={22} />
-          </TouchableOpacity>
-        </View>
       </Card>
 
       <TouchableOpacity
