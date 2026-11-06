@@ -26,6 +26,23 @@ function enqueue(task: () => Promise<void>): Promise<void> {
   return run;
 }
 
+/**
+ * Calls onTap for each tap on a subscription nudge, including the tap that
+ * cold-started the app. Returns the unsubscribe function.
+ */
+export function watchSubscriptionTaps(onTap: () => void): () => void {
+  if (Platform.OS === 'web') return () => {};
+  const handle = (response: Notifications.NotificationResponse | null) => {
+    if (!response?.notification.request.identifier.startsWith('subscription:')) return;
+    // Otherwise the same tap replays on the next subscribe (sign-out, then sign-in).
+    Notifications.clearLastNotificationResponse();
+    onTap();
+  };
+  handle(Notifications.getLastNotificationResponse());
+  const sub = Notifications.addNotificationResponseReceivedListener(handle);
+  return () => sub.remove();
+}
+
 /** Cancels scheduled nudges and clears delivered ones from the tray. */
 export function cancelAllNudges(): Promise<void> {
   if (Platform.OS === 'web') return Promise.resolve();

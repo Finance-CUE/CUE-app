@@ -4,10 +4,10 @@ export type Category =
   | 'transport'
   | 'shopping'
   | 'bills'
+  | 'subscription'
   | 'fun'
   | 'other';
 export type Direction = 'lent' | 'borrowed';
-export type Cadence = 'monthly' | 'yearly';
 
 /** All amounts are integer paise; dates are YYYY-MM-DD, datetimes ISO strings. */
 export type Spend = {
@@ -32,17 +32,23 @@ export type Subscription = {
   id: string;
   name: string;
   amount_paise: number;
-  cadence: Cadence;
-  next_due_on: string;
+  billing_day: number;
+  starts_on: string;
+  active: boolean;
   created_at: string;
+  next_billing_on: string | null;
 };
 
-export type Asset = {
-  id: string;
+export type DueCycle = {
+  subscription_id: string;
   name: string;
-  value_paise: number;
-  created_at: string;
+  amount_paise: number;
+  /** First of the month being answered, YYYY-MM-DD. */
+  month: string;
+  billing_on: string;
 };
+
+export type TrendPoint = { date: string; balance_paise: number | null; spent_paise: number };
 
 export type StartingMoney = {
   bank_paise: number;
@@ -65,10 +71,10 @@ export type Nudges = {
 
 export type PlannedNudge = {
   id: string;
-  kind: 'pattern' | 'pre_spend';
+  kind: 'pattern' | 'pre_spend' | 'spike' | 'weekly' | 'subscription';
   title: string;
   body: string;
-  /** ISO 8601 with +05:30 offset. */
+  /** ISO 8601 with the offset of the requested zone. */
   fire_at: string;
 };
 
@@ -77,6 +83,7 @@ export type SpendInput = {
   amount_paise: number;
   category: Category;
   spent_on: string;
+  billing_day?: number;
 };
 export type KhataInput = {
   direction: Direction;
@@ -87,8 +94,8 @@ export type KhataInput = {
 export type SubscriptionInput = {
   name: string;
   amount_paise: number;
-  cadence: Cadence;
-  next_due_on: string;
+  billing_day: number;
+  starts_on: string;
 };
-export type AssetInput = { name: string; value_paise: number };
+export type CycleAnswer = { month: string; active: boolean };
 export type StartingMoneyInput = { bank_paise: number; cash_paise: number };
