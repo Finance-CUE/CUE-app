@@ -1,48 +1,68 @@
-"""Pure money logic: subscription roll-forward and net worth. No I/O."""
+"""Pure money logic: subscription billing dates, net worth and the balance trend. No I/O."""
 
 import calendar
-from datetime import date
+from datetime import date, timedelta, tzinfo
 
-from app.features.money.schemas import Cadence, StartingMoney
-
-
-def _add_months(d: date, months: int) -> date:
-    """Shift by whole months, clamping the day to the target month's length."""
-    year, month0 = divmod(d.year * 12 + (d.month - 1) + months, 12)
-    month = month0 + 1
-    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+from app.features.money.schemas import BalanceSnapshot, Spend, StartingMoney, TrendPoint
 
 
-def roll_forward(next_due_on: date, cadence: Cadence, today: date) -> date:
-    """Smallest stored-date + k periods (k >= 0) that is today or later.
+def billing_date(month_first: date, billing_day: int) -> date:
+    """The billing day within a month, clamped to its length (31 -> 28 in Feb).
 
-    Always stepped from the stored date, never from a clamped result, so a
-    31st clamped to 28 Feb returns to the 31st in March.
+    Always derived from the stored day, so a clamp never drifts into later months.
     """
-    step = 1 if cadence == "monthly" else 12
-    months = (today.year - next_due_on.year) * 12 + today.month - next_due_on.month
-    k = max(0, -(-months // step))  # first period landing in today's month or later
-    due = _add_months(next_due_on, k * step)
-    if due < today:  # same month, but the (clamped) day has passed
-        due = _add_months(next_due_on, (k + 1) * step)
+    last = calendar.monthrange(month_first.year, month_first.month)[1]
+    return month_first.replace(day=min(billing_day, last))
+
+
+def _next_month(month_first: date) -> date:
+    return (month_first + timedelta(days=31)).replace(day=1)
+
+
+def next_billing_on(billing_day: int, starts_on: date, answered: set[date], today: date) -> date:
+    """First billing date on or after today that is after starts_on and whose month is unanswered."""
+    month = today.replace(day=1)
+    while True:  # ends: answered is finite
+        due = billing_date(month, billing_day)
+        if due >= today and due > starts_on and month not in answered:
+            return due
+        month = _next_month(month)
+
+
+def due_months(
+    billing_day: int, starts_on: date, answered: set[date], today: date
+) -> list[date]:
+    """First-of-month dates whose billing date is after starts_on, not after today, unanswered."""
+    month, due = starts_on.replace(day=1), []
+    while month <= today:
+        if starts_on < billing_date(month, billing_day) <= today and month not in answered:
+            due.append(month)
+        month = _next_month(month)
     return due
 
 
 def net_worth(
-    starting: StartingMoney | None,
-    assets_paise: int,
-    lent_open_paise: int,
-    borrowed_open_paise: int,
-    spends_since_set_paise: int,
+    starting: StartingMoney | None, lent_open_paise: int, borrowed_open_paise: int
 ) -> int | None:
-    """None until the user has set starting money."""
+    """None until the user has set starting money. Spends are already out of the balance."""
     if starting is None:
         return None
-    return (
-        starting.bank_paise
-        + starting.cash_paise
-        + assets_paise
-        + lent_open_paise
-        - borrowed_open_paise
-        - spends_since_set_paise
-    )
+    return starting.bank_paise + starting.cash_paise + lent_open_paise - borrowed_open_paise
+
+
+def build_trend(
+    history: list[BalanceSnapshot], spends: list[Spend], start: date, today: date, tz: tzinfo
+) -> list[TrendPoint]:
+    """One point per local day: the latest snapshot's total on or before it (else None)."""
+    snaps = sorted(history, key=lambda h: h.recorded_at)
+    spent: dict[date, int] = {}
+    for s in spends:
+        spent[s.spent_on] = spent.get(s.spent_on, 0) + s.amount_paise
+    points, i, balance = [], 0, None
+    for offset in range((today - start).days + 1):
+        day = start + timedelta(days=offset)
+        while i < len(snaps) and snaps[i].recorded_at.astimezone(tz).date() <= day:
+            balance = snaps[i].bank_paise + snaps[i].cash_paise
+            i += 1
+        points.append(TrendPoint(date=day, balance_paise=balance, spent_paise=spent.get(day, 0)))
+    return points

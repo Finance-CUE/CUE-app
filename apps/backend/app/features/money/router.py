@@ -5,36 +5,44 @@ router's limiter. Request bodies are never logged.
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Annotated
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
-from app.features.assessment.router import UserId
+from app.features.assessment.repository import AssessmentRepository
+from app.features.assessment.router import UserId, get_assessment_repo
 from app.features.auth.router import limiter
-from app.features.money.repository import MoneyRepository
+from app.features.money.archetype_booklet import load_archetype_context
+from app.features.money.nudges import HISTORY_DAYS, build_plan
+from app.features.money.repository import MoneyConflictError, MoneyRepository, MoneyStoreError
 from app.features.money.schemas import (
-    Asset,
-    AssetCreate,
+    MAX_DATE,
+    MIN_DATE,
+    CycleAnswer,
+    DueCycle,
     KhataCreate,
     KhataEntry,
     MoneySummary,
     Nudges,
     NudgesPut,
+    PlannedNudge,
     Spend,
     SpendCreate,
     StartingMoney,
     StartingMoneyPut,
     Subscription,
     SubscriptionCreate,
+    TrendPoint,
 )
-from app.features.money.schemas import MAX_DATE, MIN_DATE
-from app.features.money.service import net_worth, roll_forward
+from app.features.money.service import billing_date, build_trend, due_months, net_worth, next_billing_on
 
 router = APIRouter(prefix="/money", tags=["money"])
 profile_router = APIRouter(prefix="/profile", tags=["profile"])
 
 MAX_RANGE_DAYS = 62  # inclusive days
+TREND_DAYS = 30
 Today = Annotated[date, Query(ge=MIN_DATE, le=MAX_DATE)]
 
 
@@ -42,6 +50,16 @@ def get_money_repo(request: Request) -> MoneyRepository:
     return request.app.state.money_repo
 
 
+def get_tz(tz: Annotated[str, Query(max_length=64)] = "Asia/Kolkata") -> ZoneInfo:
+    try:
+        return ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError, OSError):  # OSError: "Asia" is a directory
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown time zone."
+        ) from None
+
+
+Tz = Annotated[ZoneInfo, Depends(get_tz)]
 Repo = Annotated[MoneyRepository, Depends(get_money_repo)]
 EntityId = uuid.UUID
 
@@ -50,6 +68,12 @@ def _removed(found: bool) -> Response:
     if not found:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _next_billing(sub: Subscription, answered: dict[str, set[date]], today: date) -> date | None:
+    if not sub.active:
+        return None
+    return next_billing_on(sub.billing_day, sub.starts_on, answered.get(sub.id, set()), today)
 
 
 # Spends ----------------------------------------------------------------------
@@ -71,6 +95,8 @@ async def list_spends(
 @router.post("/spends", status_code=status.HTTP_201_CREATED)
 @limiter.limit("60/minute")
 async def add_spend(request: Request, payload: SpendCreate, user_id: UserId, repo: Repo) -> Spend:
+    if payload.category == "subscription":
+        return await repo.add_subscription_spend(user_id, payload)
     return await repo.add_spend(user_id, payload)
 
 
@@ -100,13 +126,8 @@ async def summary(request: Request, user_id: UserId, repo: Repo) -> MoneySummary
     open_khata = await repo.list_open_khata(user_id)
     lent = sum(k.amount_paise for k in open_khata if k.direction == "lent")
     borrowed = sum(k.amount_paise for k in open_khata if k.direction == "borrowed")
-    worth = None
-    if starting is not None:
-        assets = sum(a.value_paise for a in await repo.list_assets(user_id))
-        spent = await repo.sum_spends_since(user_id, starting.set_at)
-        worth = net_worth(starting, assets, lent, borrowed, spent)
     return MoneySummary(
-        net_worth_paise=worth,
+        net_worth_paise=net_worth(starting, lent, borrowed),
         starting_money=starting,
         owed_to_you_paise=lent,
         you_owe_paise=borrowed,
@@ -154,11 +175,41 @@ async def delete_khata(
 async def list_subscriptions(
     request: Request, today: Today, user_id: UserId, repo: Repo
 ) -> list[Subscription]:
-    rolled = [
-        sub.model_copy(update={"next_due_on": roll_forward(sub.next_due_on, sub.cadence, today)})
+    answered = await repo.list_cycle_months(user_id)
+    subs = [
+        sub.model_copy(update={"next_billing_on": _next_billing(sub, answered, today)})
         for sub in await repo.list_subscriptions(user_id)
     ]
-    return sorted(rolled, key=lambda sub: sub.next_due_on)
+    return sorted(subs, key=lambda sub: (not sub.active, sub.next_billing_on or date.max))
+
+
+@router.get("/subscriptions/due")
+@limiter.limit("120/minute")
+async def due_subscriptions(
+    request: Request, today: Today, user_id: UserId, repo: Repo
+) -> list[DueCycle]:
+    answered = await repo.list_cycle_months(user_id)
+    due = [
+        DueCycle(
+            subscription_id=sub.id,
+            name=sub.name,
+            amount_paise=sub.amount_paise,
+            month=month,
+            billing_on=billing_date(month, sub.billing_day),
+        )
+        for sub in await repo.list_subscriptions(user_id)
+        if sub.active
+        for month in due_months(sub.billing_day, sub.starts_on, answered.get(sub.id, set()), today)
+    ]
+    return sorted(due, key=lambda d: d.billing_on)
+
+
+@router.post("/subscriptions/{sub_id}/cycles", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("60/minute")
+async def answer_cycle(
+    request: Request, sub_id: EntityId, payload: CycleAnswer, user_id: UserId, repo: Repo
+) -> Response:
+    return _removed(await repo.answer_cycle(user_id, str(sub_id), payload.month, payload.active))
 
 
 @router.post("/subscriptions", status_code=status.HTTP_201_CREATED)
@@ -166,7 +217,13 @@ async def list_subscriptions(
 async def add_subscription(
     request: Request, payload: SubscriptionCreate, user_id: UserId, repo: Repo
 ) -> Subscription:
-    return await repo.add_subscription(user_id, payload)
+    try:
+        return await repo.add_subscription(user_id, payload)
+    except MoneyConflictError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have an active subscription with that name.",
+        ) from None
 
 
 @router.delete("/subscriptions/{sub_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -175,31 +232,6 @@ async def delete_subscription(
     request: Request, sub_id: EntityId, user_id: UserId, repo: Repo
 ) -> Response:
     return _removed(await repo.delete_subscription(user_id, str(sub_id)))
-
-
-# Assets ------------------------------------------------------------------------
-
-
-@router.get("/assets")
-@limiter.limit("120/minute")
-async def list_assets(request: Request, user_id: UserId, repo: Repo) -> list[Asset]:
-    return await repo.list_assets(user_id)
-
-
-@router.post("/assets", status_code=status.HTTP_201_CREATED)
-@limiter.limit("60/minute")
-async def add_asset(
-    request: Request, payload: AssetCreate, user_id: UserId, repo: Repo
-) -> Asset:
-    return await repo.add_asset(user_id, payload)
-
-
-@router.delete("/assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit("60/minute")
-async def delete_asset(
-    request: Request, asset_id: EntityId, user_id: UserId, repo: Repo
-) -> Response:
-    return _removed(await repo.delete_asset(user_id, str(asset_id)))
 
 
 # Nudge preferences -------------------------------------------------------------
@@ -217,3 +249,48 @@ async def put_nudges(
     request: Request, payload: NudgesPut, user_id: UserId, repo: Repo
 ) -> Nudges:
     return await repo.put_nudges(user_id, payload)
+
+
+@profile_router.get("/nudges/plan")
+@limiter.limit("120/minute")
+async def nudge_plan(
+    request: Request,
+    user_id: UserId,
+    repo: Repo,
+    assessment_repo: Annotated[AssessmentRepository, Depends(get_assessment_repo)],
+    tz: Tz,
+) -> list[PlannedNudge]:
+    now = datetime.now(tz)
+    start = now.date() - timedelta(days=HISTORY_DAYS - 1)
+    spends = await repo.list_spends(user_id, start, now.date())
+    prefs = await repo.get_nudges(user_id)
+    result = await assessment_repo.get_latest_result(user_id)
+    slug = result.primary if result else None
+    try:
+        templates = await repo.list_templates([slug, "default"] if slug else ["default"])
+    except MoneyStoreError:  # subscription nudges need no templates
+        templates = []
+    answered = await repo.list_cycle_months(user_id)
+    subs = [
+        sub.model_copy(update={"next_billing_on": _next_billing(sub, answered, now.date())})
+        for sub in await repo.list_subscriptions(user_id)
+        if sub.active
+    ]
+    return build_plan(
+        spends, slug, prefs, now, templates, subs, load_archetype_context(slug)
+    )
+
+
+@profile_router.get("/trend")
+@limiter.limit("120/minute")
+async def trend(
+    request: Request, today: Today, tz: Tz, user_id: UserId, repo: Repo
+) -> list[TrendPoint]:
+    start = today - timedelta(days=TREND_DAYS - 1)
+    return build_trend(
+        await repo.list_balance_history(user_id),
+        await repo.list_spends(user_id, start, today),
+        start,
+        today,
+        tz,
+    )

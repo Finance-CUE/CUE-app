@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Text, TouchableOpacity } from 'react-native';
 
 import { COLORS } from '@/features/assessment/theme';
-import { PrimaryButton } from '@/features/money/components/ui';
 import { FormError, Sheet, useGuardedSubmit } from './Sheet';
 
 export function EntryDetailSheet({
@@ -11,14 +10,12 @@ export function EntryDetailSheet({
   title,
   lines,
   onDelete,
-  onSettle,
 }: {
   visible: boolean;
   onClose: () => void;
   title: string;
   lines: string[];
   onDelete: () => Promise<void>;
-  onSettle?: () => Promise<void>;
 }) {
   const { run, error } = useGuardedSubmit(visible, 'Something went wrong. Please try again.');
   const [busy, setBusy] = useState(false);
@@ -36,7 +33,6 @@ export function EntryDetailSheet({
         </Text>
       ))}
       <FormError message={error} />
-      {onSettle ? <PrimaryButton label="Mark settled" onPress={() => act(onSettle)} disabled={busy} loading={busy} /> : null}
       <TouchableOpacity
         accessibilityRole="button"
         disabled={busy}

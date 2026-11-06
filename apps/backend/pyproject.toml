@@ -3,6 +3,7 @@ name = "cue-backend"
 version = "0.1.0"
 description = "CUE backend API"
 requires-python = ">=3.12"
+dependencies = ["tzdata"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

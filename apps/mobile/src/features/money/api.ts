@@ -1,17 +1,20 @@
+import { deviceTimeZone } from '@/features/money/dates';
 import { api } from '@/lib/api';
 import type {
-  Asset,
-  AssetInput,
+  CycleAnswer,
+  DueCycle,
   KhataEntry,
   KhataInput,
   MoneySummary,
   Nudges,
+  PlannedNudge,
   Spend,
   SpendInput,
   StartingMoney,
   StartingMoneyInput,
   Subscription,
   SubscriptionInput,
+  TrendPoint,
 } from '@/features/money/types';
 
 export async function fetchSpends(start: string, end: string): Promise<Spend[]> {
@@ -70,24 +73,35 @@ export async function deleteSubscription(id: string): Promise<void> {
   await api.delete(`/money/subscriptions/${id}`);
 }
 
-export async function fetchAssets(): Promise<Asset[]> {
-  const result = await api.get<Asset[]>('/money/assets');
+export async function fetchDueSubscriptions(today: string): Promise<DueCycle[]> {
+  const result = await api.get<DueCycle[]>('/money/subscriptions/due', { params: { today } });
   return result.data;
 }
 
-export async function addAsset(input: AssetInput): Promise<Asset> {
-  const result = await api.post<Asset>('/money/assets', input);
-  return result.data;
+export async function answerCycle(id: string, answer: CycleAnswer): Promise<void> {
+  await api.post(`/money/subscriptions/${id}/cycles`, answer);
 }
 
-export async function deleteAsset(id: string): Promise<void> {
-  await api.delete(`/money/assets/${id}`);
+/** Retry once without `tz` when the server rejects the device zone (422). */
+async function getWithTz<T>(url: string, params: Record<string, string>): Promise<T> {
+  try {
+    return (await api.get<T>(url, { params: { ...params, tz: deviceTimeZone() } })).data;
+  } catch (err) {
+    if ((err as { response?: { status?: number } }).response?.status !== 422) throw err;
+    return (await api.get<T>(url, { params })).data;
+  }
 }
+
+export const fetchTrend = (today: string): Promise<TrendPoint[]> =>
+  getWithTz<TrendPoint[]>('/profile/trend', { today });
 
 export async function fetchNudges(): Promise<Nudges> {
   const result = await api.get<Nudges>('/profile/nudges');
   return result.data;
 }
+
+export const fetchNudgePlan = (): Promise<PlannedNudge[]> =>
+  getWithTz<PlannedNudge[]>('/profile/nudges/plan', {});
 
 export async function putNudges(nudges: Nudges): Promise<Nudges> {
   const result = await api.put<Nudges>('/profile/nudges', nudges);

@@ -53,3 +53,23 @@ export function parseDisplayDate(s: string): string | null {
     date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
   return real ? toISODate(date) : null;
 }
+
+export function deviceTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** `2026-11-06` to `6 Nov 2026`. */
+export function formatDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+/** UTC ISO datetime in the device zone: `6 Nov 2026, 3:30 pm`. */
+export function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  const h = d.getHours();
+  const time = `${h % 12 || 12}:${pad(d.getMinutes())} ${h < 12 ? 'am' : 'pm'}`;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${time}`;
+}

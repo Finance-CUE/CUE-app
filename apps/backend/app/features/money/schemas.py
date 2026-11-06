@@ -16,11 +16,12 @@ from pydantic import (
     StrictBool,
     StrictInt,
     StringConstraints,
+    field_validator,
+    model_validator,
 )
 
-Category = Literal["food", "groceries", "transport", "shopping", "bills", "fun", "other"]
+Category = Literal["food", "groceries", "transport", "shopping", "bills", "fun", "other", "subscription"]
 Direction = Literal["lent", "borrowed"]
-Cadence = Literal["monthly", "yearly"]
 
 MAX_PAISE = 10_000_000_000  # Rs 10,00,00,000
 
@@ -36,7 +37,7 @@ _Positive = Annotated[StrictInt, Field(ge=1, le=MAX_PAISE)]
 _NonNegative = Annotated[StrictInt, Field(ge=0, le=MAX_PAISE)]
 # Strict mode would refuse "2026-10-24"; dates alone opt back into parsing.
 _IsoDate = Annotated[date, Field(strict=False)]
-# Client-supplied due dates are bounded so date maths cannot overflow.
+# Client-supplied dates are bounded so date maths cannot overflow.
 MIN_DATE = date(2000, 1, 1)
 MAX_DATE = date(2100, 12, 31)
 _BoundedDate = Annotated[date, Field(strict=False, ge=MIN_DATE, le=MAX_DATE)]
@@ -50,7 +51,16 @@ class SpendCreate(_StrictRequest):
     description: _Description
     amount_paise: _Positive
     category: Category
-    spent_on: _IsoDate
+    spent_on: _BoundedDate
+    billing_day: Annotated[StrictInt, Field(ge=1, le=31)] | None = None
+
+    @model_validator(mode="after")
+    def _billing_day_only_for_subscriptions(self):
+        if self.category == "subscription" and len(self.description) > 60:
+            raise ValueError("Subscription names are at most 60 characters.")
+        if (self.category == "subscription") != (self.billing_day is not None):
+            raise ValueError("billing_day is required for subscriptions and forbidden otherwise.")
+        return self
 
 
 class StartingMoneyPut(_StrictRequest):
@@ -68,13 +78,20 @@ class KhataCreate(_StrictRequest):
 class SubscriptionCreate(_StrictRequest):
     name: _Name
     amount_paise: _Positive
-    cadence: Cadence
-    next_due_on: _BoundedDate
+    billing_day: Annotated[StrictInt, Field(ge=1, le=31)]
+    starts_on: _BoundedDate
 
 
-class AssetCreate(_StrictRequest):
-    name: _Name
-    value_paise: _Positive
+class CycleAnswer(_StrictRequest):
+    month: _BoundedDate
+    active: StrictBool
+
+    @field_validator("month")
+    @classmethod
+    def _first_of_month(cls, v: date) -> date:
+        if v.day != 1:
+            raise ValueError("month must be the first day of a month.")
+        return v
 
 
 class NudgesPut(_StrictRequest):
@@ -105,16 +122,38 @@ class Subscription(BaseModel):
     id: str
     name: str
     amount_paise: int
-    cadence: Cadence
-    next_due_on: date
+    billing_day: int
+    starts_on: date
+    active: bool
     created_at: datetime
+    next_billing_on: date | None = None
 
 
-class Asset(BaseModel):
-    id: str
+class DueCycle(BaseModel):
+    subscription_id: str
     name: str
-    value_paise: int
-    created_at: datetime
+    amount_paise: int
+    month: date
+    billing_on: date
+
+
+class TrendPoint(BaseModel):
+    date: date
+    balance_paise: int | None
+    spent_paise: int
+
+
+class BalanceSnapshot(BaseModel):
+    bank_paise: int
+    cash_paise: int
+    recorded_at: datetime
+
+
+class NudgeTemplate(BaseModel):
+    archetype: str
+    kind: Literal["pattern", "pre_spend", "spike", "weekly"]
+    title: str
+    body: str
 
 
 class StartingMoney(BaseModel):
@@ -134,3 +173,11 @@ class Nudges(BaseModel):
     pre_spend: bool
     patterns: bool
     weekly: bool
+
+
+class PlannedNudge(BaseModel):
+    id: str
+    kind: Literal["pattern", "pre_spend", "spike", "weekly", "subscription"]
+    title: str
+    body: str
+    fire_at: datetime
