@@ -20,7 +20,11 @@
       "predictiveBackGestureEnabled": false,
       "blockedPermissions": [
         "android.permission.WRITE_CONTACTS"
-      ]
+      ],
+      "permissions": [
+        "android.permission.READ_CONTACTS"
+      ],
+      "package": "com.caraxes22.mobile"
     },
     "web": {
       "output": "static",
@@ -51,6 +55,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f1d10b66-6b48-49a0-8054-411650c392e8"
+      }
     }
   }
 }
