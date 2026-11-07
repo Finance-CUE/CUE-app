@@ -5,6 +5,9 @@ source; Supabase applies its own per-account limits on top.
 
 ponytail: slowapi keeps counters in process memory, so limits are per worker.
 Move to the Redis backend when the API runs more than one worker.
+
+Signup and login limits are sized for a group onboarding together behind one
+shared public IP (office or event Wi-Fi), not for one person per IP.
 """
 
 from fastapi import APIRouter, Request, status
@@ -26,7 +29,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/hour")
+@limiter.limit("30/hour")
 async def signup(
     request: Request,
     payload: SignupRequest,
@@ -47,7 +50,7 @@ async def signup(
 
 
 @router.post("/login")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def login(
     request: Request,
     payload: LoginRequest,
