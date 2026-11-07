@@ -123,9 +123,15 @@ database function responds.
       were deleted afterwards.
 - [x] **App pointed at the live backend** and **package id set to `in.cuemoney.app`**
       (commit `build(mobile): point the APK at api.cuemoney.in and set package id`).
-- [x] **APK build started on EAS** (`preview` profile). Expo generated the Android
-      signing key and keeps it on Expo's servers. Every future build must be signed
-      with the same key, so don't delete it from the Expo dashboard.
+- [x] **First APK built** on EAS (8 Nov 2026, `preview` profile, version 1.0.0).
+      Build page with download and QR code:
+      https://expo.dev/accounts/caraxes22/projects/mobile/builds/c88350fc-c700-46f5-981e-862798ba4223.
+      We checked the APK itself: app name CUE, package `in.cuemoney.app`, talks to
+      `https://api.cuemoney.in/api/v1`, reads (never writes) contacts. It is about 113 MB
+      because it contains code for every phone processor type.
+      Expo generated the Android signing key and keeps it on Expo's servers. Every
+      future build must be signed with the same key, so don't delete it from the
+      Expo dashboard.
 
 ### Still to do
 
