@@ -18,7 +18,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-BACKEND-HOST/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://api.cuemoney.in/api/v1"
       }
     },
     "production": {

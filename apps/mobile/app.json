@@ -24,7 +24,7 @@
       "permissions": [
         "android.permission.READ_CONTACTS"
       ],
-      "package": "com.caraxes22.mobile"
+      "package": "in.cuemoney.app"
     },
     "web": {
       "output": "static",
