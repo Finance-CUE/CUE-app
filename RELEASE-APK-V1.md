@@ -102,29 +102,53 @@ database function responds.
 | 5 | `fix(backend): size auth rate limits for group onboarding` | Signup was capped at 5 per hour per IP address. | People onboarding together on one Wi-Fi share one IP, so **everyone after the 5th signup would be refused**. | Signup 30/hour, login 30/minute. |
 | 6 | `build: add Render blueprint for the backend` | No hosting configuration existed. | n/a | `render.yaml` describes the backend service for Render: free plan, Singapore region, health check. Secrets are entered in Render's dashboard and never committed. |
 | 7 | `docs: add release README for this branch` | n/a | n/a | This document. |
+| 8 | `build(mobile): point the APK at api.cuemoney.in and set package id` | The build still had a placeholder backend address and an auto-generated package id. | The APK could not reach any server. | Uses `https://api.cuemoney.in/api/v1` and the permanent id `in.cuemoney.app`. |
 
 ---
 
-## 6. Still to do before the APK goes out
+## 6. Launch checklist
 
-- [ ] **Push this branch** to GitHub so Render can read it.
-- [ ] **Deploy the backend on Render**: Dashboard → New → Blueprint → choose this repo.
-      Enter the four `SUPABASE_*` values when asked.
-- [ ] **Point our domain at it**: in the Render service, open Settings → Custom Domains
-      and add e.g. `api.<our-domain>`. Then add the CNAME record Render shows at the
-      domain registrar. Render provides the HTTPS certificate for free.
+### Done
+
+- [x] **Branch pushed** to GitHub (`Finance-CUE/CUE-app`, branch `release/apk-v1`).
+- [x] **Backend deployed on Render** from `render.yaml` (Blueprint "CUE-v1",
+      service `cue-backend`, free plan, Singapore).
+- [x] **Domain connected**: the backend lives at **`https://api.cuemoney.in`**.
+      DNS for `cuemoney.in` is managed at **Hostinger**, where a `CNAME` record
+      for `api` points to the Render service. Render provides the HTTPS certificate.
+- [x] **Live end-to-end test** (8 Nov 2026). A script exercised signup, login,
+      token refresh, the full assessment, spends, subscriptions and their monthly
+      prompts, khata, net worth, the balance trend and the nudge plan against
+      `api.cuemoney.in`. All 27 checks passed, and the test account and its data
+      were deleted afterwards.
+- [x] **App pointed at the live backend** and **package id set to `in.cuemoney.app`**
+      (commit `build(mobile): point the APK at api.cuemoney.in and set package id`).
+- [x] **APK build started on EAS** (`preview` profile). Expo generated the Android
+      signing key and keeps it on Expo's servers. Every future build must be signed
+      with the same key, so don't delete it from the Expo dashboard.
+
+### Still to do
+
 - [ ] **Keep the free server awake.** Render's free plan sleeps after 15 idle
       minutes and then takes about 50 seconds to wake. The app gives up after
       15 seconds, so a sleeping server means "Could not reach CUE". Fix: a free
       pinger (cron-job.org or UptimeRobot) that calls
-      `https://api.<our-domain>/health` every 10 minutes.
+      `https://api.cuemoney.in/health` every 10 minutes.
 - [ ] **Raise Supabase's sign-in rate limits** (Supabase → Authentication → Rate Limits).
       Every user's login reaches Supabase from the backend's single server address,
       so Supabase's per-address limit covers all our users together.
-- [ ] **Put the real backend address** into `apps/mobile/eas.json`
-      (replace `https://REPLACE-WITH-BACKEND-HOST/api/v1`).
-- [ ] **Build the APK**: `cd apps/mobile && npx eas-cli build -p android --profile preview`.
-      EAS returns a download link and QR code to share with stakeholders.
+
+### Making a new APK later
+
+After changing the app, commit and push, then run:
+
+```bash
+cd apps/mobile
+npx eas-cli build -p android --profile preview
+```
+
+EAS prints a link to the build page, which has the APK download and a QR code.
+Backend changes need a manual deploy in Render (auto-deploy is off on purpose).
 
 ## 7. Known limitations of this first version
 
@@ -133,9 +157,12 @@ database function responds.
 - **Nudge wording is placeholder copy.** Every message starts with `[PLACEHOLDER]`.
   It can be edited without a code change in Supabase → Table editor →
   `notification_templates`.
-- **The Android package id is `com.caraxes22.mobile`.** Once people install the
-  APK, changing this id means they must uninstall and reinstall. Decide on the
-  final id (e.g. `com.<company>.cue`) before a wide release.
+- **The APK is installed by hand ("sideloaded").** Android asks people to allow
+  installs from their browser or file manager the first time. iPhone users cannot
+  install it; iOS needs a separate build and an Apple developer account.
+- **The Expo project is still named `mobile`** under the personal Expo account
+  `caraxes22`. It works, but moving it to an organisation account is worth doing
+  before more people work on it.
 - **Email addresses are not verified at signup** (no email sender is configured yet).
 - **Free hosting:** one small server, fine for 25–40 people. Rate-limit counters
   live in that server's memory, so they reset whenever it restarts.
