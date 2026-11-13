@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 
 import { COLORS } from '@/features/assessment/theme';
+import { toErrorMessage } from '@/lib/api';
 import { Card, PrimaryButton } from '../components/ui';
 import { formatDateTime } from '../dates';
 import { formatRupees } from '../format';
@@ -34,8 +35,8 @@ export function PersonSheet({
     setError(null);
     try {
       await action();
-    } catch {
-      setError('Something went wrong. Please try again.');
+    } catch (err) {
+      setError(toErrorMessage(err, "We couldn't update this entry. Please try again."));
     } finally {
       inFlight.current = false;
     }

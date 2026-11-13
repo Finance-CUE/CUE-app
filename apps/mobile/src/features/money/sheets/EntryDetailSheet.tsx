@@ -17,7 +17,7 @@ export function EntryDetailSheet({
   lines: string[];
   onDelete: () => Promise<void>;
 }) {
-  const { run, error } = useGuardedSubmit(visible, 'Something went wrong. Please try again.');
+  const { run, error } = useGuardedSubmit(visible, "We couldn't delete this entry. Please try again.");
   const [busy, setBusy] = useState(false);
 
   const act = (action: () => Promise<void>) => {
