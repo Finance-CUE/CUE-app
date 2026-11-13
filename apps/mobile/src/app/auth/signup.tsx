@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SignupScreen } from '@/features/auth/screens/SignupScreen';
 import { useSignup } from '@/features/auth/hooks';
 import { toErrorMessage } from '@/lib/api';
-import { useAssessmentStore } from '@/features/assessment/store';
 
 export default function SignupRoute() {
   const router = useRouter();
@@ -26,21 +25,20 @@ export default function SignupRoute() {
         signup.mutate(
           {
             full_name: fullName,
-            email,
+            // Supabase stores addresses lowercased; the code step reuses this one.
+            email: email.toLowerCase(),
             phone: phoneNumber.replace(/\D/g, ''),
             password,
           },
           {
-            onSuccess: async (session) => {
-              // Signup is the only path that requires the assessment. Marked
-              // before navigating so a relaunch mid-quiz resumes it. Login
-              // never sets this flag.
-              await useAssessmentStore.getState().markPending(session.user.id);
-              router.replace('/assessment');
+            // No session yet: the account opens once the emailed code is
+            // verified, and that step sends them to the assessment.
+            onSuccess: ({ email: address }) => {
+              router.replace({ pathname: '/auth/verify-email', params: { email: address } });
             },
             onError: (error) => {
               setErrorMessage(
-                toErrorMessage(error, 'Could not create your account.'),
+                toErrorMessage(error, "We couldn't create your account. Please try again."),
               );
             },
           },

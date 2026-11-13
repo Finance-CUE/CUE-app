@@ -16,12 +16,17 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GoogleLogo } from '@/components/GoogleLogo';
 import { validateEmail } from '@/features/auth/utils/passwordValidation';
 
 interface WelcomeLoginProps {
   onContinue: (email: string, password: string) => void;
   onSignupPress: () => void;
+  /** Receives whatever is in the email field, to prefill the recovery screen. */
+  onForgotPress: (email: string) => void;
+  onGooglePress: () => void;
   isSubmitting?: boolean;
+  isGoogleLoading?: boolean;
   submitError?: string | null;
 }
 
@@ -123,7 +128,10 @@ function RotatingAccentWord() {
 export function WelcomeLogin({
   onContinue,
   onSignupPress,
+  onForgotPress,
+  onGooglePress,
   isSubmitting = false,
+  isGoogleLoading = false,
   submitError = null,
 }: WelcomeLoginProps) {
   const insets = useSafeAreaInsets();
@@ -347,6 +355,16 @@ export function WelcomeLogin({
               </View>
             )}
 
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.7}
+              onPress={() => onForgotPress(email)}
+              hitSlop={8}
+              style={styles.forgotButton}
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+
             {/* Server-side failure */}
 
             {Boolean(submitError) && (
@@ -398,6 +416,26 @@ export function WelcomeLogin({
 
               <View style={styles.dividerLine} />
             </View>
+
+            {/* Google */}
+
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isGoogleLoading, busy: isGoogleLoading }}
+              activeOpacity={0.85}
+              disabled={isGoogleLoading || isSubmitting}
+              onPress={onGooglePress}
+              style={styles.googleButton}
+            >
+              {isGoogleLoading ? (
+                <ActivityIndicator color={COLORS.text} />
+              ) : (
+                <>
+                  <GoogleLogo size={20} />
+                  <Text style={styles.googleText}>Continue with Google</Text>
+                </>
+              )}
+            </TouchableOpacity>
 
             {/* Signup */}
 
@@ -731,6 +769,42 @@ const styles = StyleSheet.create({
     marginHorizontal: 15,
     color: '#A19AA6',
     fontSize: 12,
+  },
+
+  /* FORGOT PASSWORD */
+
+  forgotButton: {
+    alignSelf: 'flex-end',
+    marginTop: 10,
+    marginRight: 6,
+  },
+
+  forgotText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.link,
+  },
+
+  /* GOOGLE */
+
+  googleButton: {
+    height: 52,
+    width: '100%',
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 22,
+  },
+
+  googleText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.text,
   },
 
   /* SIGNUP */

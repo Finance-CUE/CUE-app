@@ -6,6 +6,7 @@ import { useAuthStore } from '@/features/auth/store';
 
 export default function Index() {
   const status = useAuthStore((state) => state.status);
+  const hasPhone = useAuthStore((state) => Boolean(state.user?.phone));
   const gate = useAssessmentGate();
 
   // The splash overlay stays up while the keychain and storage are read, so
@@ -15,6 +16,8 @@ export default function Index() {
   }
 
   if (status === 'authenticated') {
+    // Google sign-ups have no phone yet; every account needs one.
+    if (!hasPhone) return <Redirect href="/auth/add-phone" />;
     return <Redirect href={gate === 'required' ? '/assessment' : '/today'} />;
   }
 
