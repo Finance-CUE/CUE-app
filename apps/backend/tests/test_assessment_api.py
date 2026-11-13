@@ -207,7 +207,10 @@ def test_store_failure_is_a_generic_503():
         response = client.get(f"{BASE}/progress")
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Assessment service unavailable."}
+    assert response.json() == {
+        "detail": "Something went wrong on our side. Please try again in a moment.",
+        "code": "server_unavailable",
+    }
 
 
 def test_complete_is_rate_limited_to_ten_per_hour():

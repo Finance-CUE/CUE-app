@@ -71,6 +71,50 @@ class LoginRequest(_StrictModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+# Supabase's emailed codes are 6 digits by default and configurable up to 10.
+_CODE_PATTERN = r"^\d{6,10}$"
+
+
+class EmailRequest(_StrictModel):
+    email: EmailStr
+
+
+class VerifyEmailRequest(_StrictModel):
+    email: EmailStr
+    code: str = Field(pattern=_CODE_PATTERN)
+
+
+class ResetPasswordRequest(_StrictModel):
+    email: EmailStr
+    code: str = Field(pattern=_CODE_PATTERN)
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _password(cls, value: str) -> str:
+        return _validate_password(value)
+
+
+class GoogleSignInRequest(_StrictModel):
+    id_token: str = Field(min_length=20, max_length=4096)
+
+
+class PhoneRequest(_StrictModel):
+    phone: str
+
+    @field_validator("phone")
+    @classmethod
+    def _phone(cls, value: str) -> str:
+        return _validate_phone(value)
+
+
+class SignupPendingResponse(BaseModel):
+    """Signup succeeded; the account is unusable until the emailed code is entered."""
+
+    status: str = "verification_required"
+    email: str
+
+
 class RefreshRequest(_StrictModel):
     refresh_token: str = Field(min_length=1, max_length=2000)
 

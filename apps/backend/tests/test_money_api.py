@@ -434,7 +434,10 @@ def test_store_failure_is_503():
     with _client(BrokenRepo()) as c:
         response = c.get(f"{BASE}/spends", params={"start": "2026-10-01", "end": "2026-10-31"})
     assert response.status_code == 503
-    assert response.json() == {"detail": "Money service unavailable."}
+    assert response.json() == {
+        "detail": "Something went wrong on our side. Please try again in a moment.",
+        "code": "server_unavailable",
+    }
 
 
 @pytest.mark.parametrize("today", ["9999-12-31", "1999-12-31", "2101-01-01"])

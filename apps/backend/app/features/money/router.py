@@ -66,7 +66,10 @@ EntityId = uuid.UUID
 
 def _removed(found: bool) -> Response:
     if not found:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This entry no longer exists. Pull down to refresh.",
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
