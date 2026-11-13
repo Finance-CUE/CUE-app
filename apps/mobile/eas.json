@@ -18,7 +18,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.cuemoney.in/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://api.cuemoney.in/api/v1",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "293339488073-h6pveunkljbd043goc4f8hj9ei2tvnbj.apps.googleusercontent.com"
       }
     },
     "production": {
