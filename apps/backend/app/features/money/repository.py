@@ -24,6 +24,7 @@ from app.features.money.schemas import (
     NudgesPut,
     Spend,
     SpendCreate,
+    SpendUpdate,
     StartingMoney,
     StartingMoneyPut,
     Subscription,
@@ -151,6 +152,33 @@ class MoneyRepository:
         )
         return [Spend(**row) for row in rows]
 
+    async def update_spend(self, user_id: str, spend_id: str, data: SpendUpdate) -> Spend | None:
+        """None when the spend is missing, not the user's, or a subscription payment."""
+        rows = await self._request(
+            "PATCH",
+            "spends",
+            params={
+                "id": f"eq.{_uid(spend_id)}",
+                "user_id": f"eq.{_uid(user_id)}",
+                "category": "neq.subscription",
+            },
+            json=data.model_dump(mode="json"),
+            prefer=_REP,
+        )
+        return Spend(**rows[0]) if rows else None
+
+    async def sum_spends_logged_after(self, user_id: str, after: datetime) -> int:
+        rows = await self._get_all(
+            "spends",
+            {
+                "user_id": f"eq.{_uid(user_id)}",
+                "created_at": f"gt.{after.isoformat()}",
+                "select": "id,amount_paise",
+                "order": "id.asc",
+            },
+        )
+        return sum(int(r["amount_paise"]) for r in rows)
+
     async def delete_spend(self, user_id: str, spend_id: str) -> bool:
         return await self._delete("spends", user_id, spend_id)
 
@@ -193,8 +221,14 @@ class MoneyRepository:
                 json={**amounts, "user_id": uid},
                 prefer="resolution=ignore-duplicates,return=minimal",
             )
+        # Every save restamps set_at: the typed amounts are the balance as of now,
+        # and spends logged after this moment come off it (see net_worth).
         rows = await self._request(
-            "PATCH", "starting_money", params={"user_id": f"eq.{uid}"}, json=amounts, prefer=_REP
+            "PATCH",
+            "starting_money",
+            params={"user_id": f"eq.{uid}"},
+            json={**amounts, "set_at": datetime.now(UTC).isoformat()},
+            prefer=_REP,
         )
         if not rows:
             raise MoneyStoreError("Money service returned no row.")

@@ -100,12 +100,13 @@ def _spend(day, amount):
     )  # fmt: skip
 
 
-def test_trend_carries_balance_forward_and_none_before_first_snapshot():
+def test_trend_carries_balance_forward_less_later_spends_and_none_before_first_snapshot():
     history = [_snap(3, 23, 1000, 50), _snap(5, 1, 2000), _snap(5, 9, 3000, 10)]
     spends = [_spend(4, 100), _spend(4, 25), _spend(6, 7)]
     pts = build_trend(history, spends, date(2026, 10, 2), date(2026, 10, 6), IST)
     assert [p.date for p in pts] == [date(2026, 10, d) for d in range(2, 7)]
-    assert [p.balance_paise for p in pts] == [None, 1050, 1050, 3010, 3010]
+    # Spends logged after a snapshot come off it; a newer snapshot already includes them.
+    assert [p.balance_paise for p in pts] == [None, 1050, 925, 3010, 3003]
     assert [p.spent_paise for p in pts] == [0, 0, 125, 0, 7]
 
 

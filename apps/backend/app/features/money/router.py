@@ -30,6 +30,7 @@ from app.features.money.schemas import (
     PlannedNudge,
     Spend,
     SpendCreate,
+    SpendUpdate,
     StartingMoney,
     StartingMoneyPut,
     Subscription,
@@ -103,6 +104,20 @@ async def add_spend(request: Request, payload: SpendCreate, user_id: UserId, rep
     return await repo.add_spend(user_id, payload)
 
 
+@router.patch("/spends/{spend_id}")
+@limiter.limit("60/minute")
+async def edit_spend(
+    request: Request, spend_id: EntityId, payload: SpendUpdate, user_id: UserId, repo: Repo
+) -> Spend:
+    updated = await repo.update_spend(user_id, str(spend_id), payload)
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This entry can't be edited. Pull down to refresh, or delete it and log it again.",
+        )
+    return updated
+
+
 @router.delete("/spends/{spend_id}", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("60/minute")
 async def delete_spend(
@@ -129,11 +144,13 @@ async def summary(request: Request, user_id: UserId, repo: Repo) -> MoneySummary
     open_khata = await repo.list_open_khata(user_id)
     lent = sum(k.amount_paise for k in open_khata if k.direction == "lent")
     borrowed = sum(k.amount_paise for k in open_khata if k.direction == "borrowed")
+    since = await repo.sum_spends_logged_after(user_id, starting.set_at) if starting else 0
     return MoneySummary(
-        net_worth_paise=net_worth(starting, lent, borrowed),
+        net_worth_paise=net_worth(starting, lent, borrowed, since),
         starting_money=starting,
         owed_to_you_paise=lent,
         you_owe_paise=borrowed,
+        spent_since_update_paise=since,
     )
 
 

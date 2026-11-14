@@ -117,7 +117,7 @@ def test_list_open_khata_filters_unsettled():
     assert seen[0].url.params["order"] == "created_at.desc,id.asc"
 
 
-def test_put_starting_money_keeps_set_at_on_update():
+def test_put_starting_money_restamps_set_at_on_update():
     seen: list[httpx.Request] = []
     existing = {"bank_paise": 1, "cash_paise": 2, "set_at": "2026-10-01T00:00:00+00:00"}
 
@@ -133,9 +133,11 @@ def test_put_starting_money_keeps_set_at_on_update():
     write = seen[-1]
     assert write.method == "PATCH"
     assert write.url.params["user_id"] == f"eq.{USER}"
-    assert set(json.loads(write.content)) == {"bank_paise", "cash_paise"}
+    body = json.loads(write.content)
+    assert set(body) == {"bank_paise", "cash_paise", "set_at"}
+    # The new balance is "as of now": later spends are measured from this stamp.
+    assert datetime.fromisoformat(body["set_at"]) > datetime(2026, 10, 1, tzinfo=UTC)
     assert result.bank_paise == 500
-    assert result.set_at == datetime(2026, 10, 1, tzinfo=UTC)
 
 
 def test_put_starting_money_inserts_first_time_tolerating_duplicates():
@@ -163,7 +165,7 @@ def test_put_starting_money_inserts_first_time_tolerating_duplicates():
     assert body["user_id"] == USER
     assert "set_at" not in body
     assert patch.method == "PATCH"
-    assert set(json.loads(patch.content)) == {"bank_paise", "cash_paise"}
+    assert set(json.loads(patch.content)) == {"bank_paise", "cash_paise", "set_at"}
     assert result.bank_paise == 500
 
 

@@ -40,8 +40,12 @@ IST = ZoneInfo("Asia/Kolkata")
 SPEND = {"description": "Chai", "amount_paise": 2000, "category": "food", "spent_on": "2026-10-24"}
 
 
+_LAST = [datetime.now(UTC)]
+
+
 def _now() -> datetime:
-    return datetime.now(UTC)
+    _LAST[0] = max(datetime.now(UTC), _LAST[0] + timedelta(microseconds=1))
+    return _LAST[0]
 
 
 class FakeRepo:
@@ -101,12 +105,23 @@ class FakeRepo:
     async def delete_spend(self, user_id, spend_id):
         return self._drop(self.spends.get(user_id, []), spend_id)
 
+    async def update_spend(self, user_id, spend_id, data):
+        rows = self.spends.get(user_id, [])
+        for i, row in enumerate(rows):
+            if row.id == spend_id and row.category != "subscription":
+                rows[i] = row.model_copy(update=data.model_dump())
+                return rows[i]
+        return None
+
+    async def sum_spends_logged_after(self, user_id, after):
+        return sum(s.amount_paise for s in self.spends.get(user_id, []) if s.created_at > after)
+
     async def get_starting_money(self, user_id):
         return self.starting.get(user_id)
 
     async def put_starting_money(self, user_id, data):
         old = self.starting.get(user_id)
-        row = StartingMoney(set_at=old.set_at if old else _now(), **data.model_dump())
+        row = StartingMoney(set_at=_now(), **data.model_dump())
         self.starting[user_id] = row
         self.history.setdefault(user_id, []).append(
             BalanceSnapshot(recorded_at=_now(), **data.model_dump())
@@ -290,15 +305,57 @@ def test_summary_null_net_worth_until_starting_money_set():
         assert before["owed_to_you_paise"] == 0 and before["you_owe_paise"] == 0
 
 
-def test_net_worth_is_bank_cash_lent_borrowed_and_ignores_spends():
+def test_net_worth_takes_off_spends_logged_after_the_balance_was_set():
     with _client(FakeRepo()) as c:
+        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 999})  # before: already in balance
         c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 50})
         c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 300})
         c.post(f"{BASE}/khata", json={"direction": "lent", "person": "A", "amount_paise": 400})
         c.post(f"{BASE}/khata", json={"direction": "borrowed", "person": "B", "amount_paise": 100})
         s = c.get(f"{BASE}/summary").json()
-    assert s["net_worth_paise"] == 1000 + 50 + 400 - 100
+        # Updating the balance again resets the reference point.
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 700, "cash_paise": 50})
+        after = c.get(f"{BASE}/summary").json()
+    assert s["net_worth_paise"] == 1000 + 50 + 400 - 100 - 300
+    assert s["spent_since_update_paise"] == 300
     assert (s["owed_to_you_paise"], s["you_owe_paise"]) == (400, 100)
+    assert after["net_worth_paise"] == 700 + 50 + 400 - 100
+    assert after["spent_since_update_paise"] == 0
+
+
+def test_edit_spend_changes_fields_and_refuses_subscription_payments():
+    repo = FakeRepo()
+    with _client(repo) as c:
+        spend = c.post(f"{BASE}/spends", json=SPEND).json()
+        edited = c.patch(
+            f"{BASE}/spends/{spend['id']}",
+            json={"description": "Lunch", "amount_paise": 15000, "category": "food",
+                  "spent_on": "2026-10-20"},
+        )  # fmt: skip
+        sub_spend = c.post(
+            f"{BASE}/spends",
+            json={**SPEND, "description": "Netflix", "category": "subscription", "billing_day": 24},
+        ).json()
+        refused = c.patch(
+            f"{BASE}/spends/{sub_spend['id']}",
+            json={"description": "X", "amount_paise": 1, "category": "food",
+                  "spent_on": "2026-10-20"},
+        )  # fmt: skip
+        bad_cat = c.patch(
+            f"{BASE}/spends/{spend['id']}",
+            json={"description": "X", "amount_paise": 1, "category": "subscription",
+                  "spent_on": "2026-10-20"},
+        )  # fmt: skip
+        missing = c.patch(
+            f"{BASE}/spends/{uuid.uuid4()}",
+            json={"description": "X", "amount_paise": 1, "category": "food",
+                  "spent_on": "2026-10-20"},
+        )  # fmt: skip
+    assert edited.status_code == 200
+    assert (edited.json()["description"], edited.json()["amount_paise"]) == ("Lunch", 15000)
+    assert edited.json()["spent_on"] == "2026-10-20"
+    assert refused.status_code == 404 and bad_cat.status_code == 422
+    assert missing.status_code == 404
 
 
 def _sub(name="Netflix", day=31, starts="2026-01-05", amount=19900):

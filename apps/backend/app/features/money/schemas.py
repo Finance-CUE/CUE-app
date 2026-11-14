@@ -63,6 +63,15 @@ class SpendCreate(_StrictRequest):
         return self
 
 
+class SpendUpdate(_StrictRequest):
+    """Edit a logged spend. Subscription payments are edited through their subscription."""
+
+    description: _Description
+    amount_paise: _Positive
+    category: Literal["food", "groceries", "transport", "shopping", "bills", "fun", "other"]
+    spent_on: _BoundedDate
+
+
 class StartingMoneyPut(_StrictRequest):
     bank_paise: _NonNegative
     cash_paise: _NonNegative
@@ -165,6 +174,8 @@ class StartingMoney(BaseModel):
 class MoneySummary(BaseModel):
     net_worth_paise: int | None
     starting_money: StartingMoney | None
+    # Spends logged after the balance was last set; already taken off net_worth_paise.
+    spent_since_update_paise: int = 0
     owed_to_you_paise: int
     you_owe_paise: int
 
