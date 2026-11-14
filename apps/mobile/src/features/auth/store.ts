@@ -2,7 +2,9 @@ import { create } from 'zustand';
 
 import { setSessionExpiredHandler } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
+import { cancelAllNudges } from '@/features/money/notifications';
 import * as authApi from '@/features/auth/api';
+import { forgetGoogleAccount } from '@/features/auth/google';
 import {
   clearTokens,
   loadTokens,
@@ -16,6 +18,7 @@ interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
   setSession: (session: Session) => Promise<void>;
+  setUser: (user: AuthUser) => void;
   restore: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -31,9 +34,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // the previous user's data.
     if (get().user?.id !== session.user.id) {
       queryClient.clear();
+      cancelAllNudges().catch(() => {});
     }
     set({ status: 'authenticated', user: session.user });
   },
+
+  setUser: (user) => set({ user }),
 
   restore: async () => {
     const hasTokens = await loadTokens();
@@ -65,6 +71,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await clearTokens();
     queryClient.clear();
+    cancelAllNudges().catch(() => {});
+    // Otherwise the next Google tap silently reuses this account.
+    await forgetGoogleAccount();
     set({ status: 'unauthenticated', user: null });
   },
 }));
@@ -72,5 +81,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 // A refresh failure anywhere in the app drops straight to signed out.
 setSessionExpiredHandler(() => {
   queryClient.clear();
+  cancelAllNudges().catch(() => {});
   useAuthStore.setState({ status: 'unauthenticated', user: null });
 });

@@ -5,20 +5,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
-import { CategoryIcon, ClockIcon, RupeeIcon, SparkIcon, SwapIcon } from '../components/icons';
+import { CategoryIcon, ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { Card, EmptyCard, Fab, Row, ScreenHeader, SectionHeader, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
-import { daysUntil, greeting, startOfWeek, toISODate, weekDays } from '../dates';
+import { daysUntil, formatDate, formatDateTime, greeting, startOfWeek, toISODate, weekDays } from '../dates';
 import { formatRupees } from '../format';
-import { useDeleteSpend, useDeleteSubscription, useSpends, useSubscriptions, useSummary } from '../hooks';
-import { AssetSheet } from '../sheets/AssetSheet';
+import { useDeleteSpend, useDeleteSubscription, useDueSubscriptions, useSpends, useSubscriptions, useSummary, useToday } from '../hooks';
 import { EntryDetailSheet } from '../sheets/EntryDetailSheet';
 import { KhataSheet } from '../sheets/KhataSheet';
 import { LogSpendSheet } from '../sheets/LogSpendSheet';
 import { StartingMoneySheet } from '../sheets/StartingMoneySheet';
+import { SubscriptionPromptSheet } from '../sheets/SubscriptionPromptSheet';
 import { SubscriptionSheet } from '../sheets/SubscriptionSheet';
+import type { DueCycle } from '../types';
 
-type SheetName = 'log' | 'khata' | 'sub' | 'asset' | 'start' | null;
+type SheetName = 'log' | 'khata' | 'sub' | 'start' | null;
 type Detail = { title: string; lines: string[]; onDelete: () => Promise<void> };
 
 const DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -31,6 +32,8 @@ function dueLabel(n: number): string {
   return `Due in ${n} days`;
 }
 
+const cycleKey = (c: DueCycle) => `${c.subscription_id}:${c.month}`;
+
 const Loading = () => <ActivityIndicator color={COLORS.purple} />;
 
 export function TodayScreen() {
@@ -40,8 +43,11 @@ export function TodayScreen() {
   const [sheet, setSheet] = useState<SheetName>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Dismissing hides the cycles shown, for that day only. A cycle that comes due
+  // later still prompts, and a dismissed one comes back tomorrow or on the next launch.
+  const [dismissed, setDismissed] = useState<{ on: string; keys: string[] }>({ on: '', keys: [] });
 
-  const now = new Date();
+  const now = useToday();
   const todayISO = toISODate(now);
   const days = weekDays(now);
   const weekStart = toISODate(startOfWeek(now));
@@ -53,6 +59,9 @@ export function TodayScreen() {
   const summary = useSummary();
   const spends = useSpends(weekStart, weekEnd);
   const subs = useSubscriptions(todayISO);
+  const due = useDueSubscriptions(todayISO);
+  const dismissedKeys = dismissed.on === todayISO ? dismissed.keys : [];
+  const prompt = (due.data ?? []).filter((c) => !dismissedKeys.includes(cycleKey(c)));
   const delSpend = useDeleteSpend();
   const delSub = useDeleteSubscription();
 
@@ -76,12 +85,35 @@ export function TodayScreen() {
   const todaySpends = byDay(todayISO);
   const close = () => setSheet(null);
   const nw = summary.data?.net_worth_paise ?? null;
+  const active = (subs.data ?? []).filter((s) => s.active && s.next_billing_on);
+  const upcoming = active.filter((s) => daysUntil(s.next_billing_on ?? '', now) <= 7);
+  const later = active.filter((s) => !upcoming.includes(s));
+  const stopped = (subs.data ?? []).filter((s) => !s.active);
+  const subRow = (s: (typeof active)[number]) => {
+    const label = s.active ? dueLabel(daysUntil(s.next_billing_on ?? '', now)) : 'Stopped';
+    return (
+      <Row
+        key={s.id}
+        title={s.name}
+        subtitle={label}
+        amount={formatRupees(s.amount_paise)}
+        onPress={() =>
+          setDetail({
+            title: s.name,
+            lines: [formatRupees(s.amount_paise), `Billed on day ${s.billing_day} each month`, label],
+            onDelete: async () => {
+              await delSub.mutateAsync(s.id);
+            },
+          })
+        }
+      />
+    );
+  };
 
   const tiles: { label: string; bg: string; icon: ReactNode; sheet: SheetName }[] = [
     { label: 'Cash', bg: COLORS.purpleSoft, icon: <RupeeIcon color={COLORS.purple} />, sheet: 'log' },
     { label: 'Lend / Borrow', bg: COLORS.sageTint, icon: <SwapIcon color={COLORS.sage} />, sheet: 'khata' },
     { label: 'Subscription', bg: COLORS.peachTint, icon: <ClockIcon color={COLORS.peach} />, sheet: 'sub' },
-    { label: 'Asset', bg: COLORS.purpleSoft, icon: <SparkIcon color={COLORS.purple} />, sheet: 'asset' },
   ];
 
   return (
@@ -92,7 +124,7 @@ export function TodayScreen() {
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
         <ScreenHeader
-          eyebrow={greeting(now)}
+          eyebrow={greeting(new Date()) /* needs the hour; useToday only tracks the day */}
           title={first ? `Hi, ${first}` : 'Hi there'}
           {...avatar}
         />
@@ -112,7 +144,7 @@ export function TodayScreen() {
               </Text>
               <TouchableOpacity accessibilityRole="button" onPress={() => setSheet('start')} activeOpacity={0.7}>
                 <Text style={{ color: COLORS.linkOnDark, fontSize: 14, fontWeight: '600' }}>
-                  {nw === null ? 'Set up your starting money →' : 'Edit starting money'}
+                  Update balance
                 </Text>
               </TouchableOpacity>
             </>
@@ -231,7 +263,12 @@ export function TodayScreen() {
                   onPress={() =>
                     setDetail({
                       title: s.description,
-                      lines: [formatRupees(s.amount_paise), categoryLabel(s.category), s.spent_on],
+                      lines: [
+                        formatRupees(s.amount_paise),
+                        categoryLabel(s.category),
+                        formatDate(s.spent_on),
+                        `Logged ${formatDateTime(s.created_at)}`,
+                      ],
                       onDelete: async () => {
                         await delSpend.mutateAsync(s.id);
                       },
@@ -244,37 +281,33 @@ export function TodayScreen() {
         </View>
 
         <View style={{ gap: 12 }}>
-          <SectionHeader title="Coming up" />
+          <SectionHeader title="Upcoming" />
           {subs.isPending ? (
             <Card>
               <Loading />
             </Card>
           ) : subs.isError ? (
             <EmptyCard text={LOAD_ERROR} />
-          ) : subs.data.length === 0 ? (
-            <EmptyCard text="Your recurring payments will appear here." />
+          ) : upcoming.length === 0 ? (
+            <EmptyCard text="Nothing due in the next 7 days." />
           ) : (
-            <Card style={{ paddingVertical: 6 }}>
-              {subs.data.map((s) => (
-                <Row
-                  key={s.id}
-                  title={s.name}
-                  subtitle={dueLabel(daysUntil(s.next_due_on, now))}
-                  amount={formatRupees(s.amount_paise)}
-                  onPress={() =>
-                    setDetail({
-                      title: s.name,
-                      lines: [formatRupees(s.amount_paise), `Repeats ${s.cadence}`, dueLabel(daysUntil(s.next_due_on, now))],
-                      onDelete: async () => {
-                        await delSub.mutateAsync(s.id);
-                      },
-                    })
-                  }
-                />
-              ))}
-            </Card>
+            <Card style={{ paddingVertical: 6 }}>{upcoming.map(subRow)}</Card>
           )}
         </View>
+
+        {later.length > 0 ? (
+          <View style={{ gap: 12 }}>
+            <SectionHeader title="Active subscriptions" />
+            <Card style={{ paddingVertical: 6 }}>{later.map(subRow)}</Card>
+          </View>
+        ) : null}
+
+        {stopped.length > 0 ? (
+          <View style={{ gap: 12 }}>
+            <SectionHeader title="Stopped" />
+            <Card style={{ paddingVertical: 6 }}>{stopped.map(subRow)}</Card>
+          </View>
+        ) : null}
       </ScrollView>
 
       <Fab onPress={() => setSheet('log')} />
@@ -282,7 +315,12 @@ export function TodayScreen() {
       <LogSpendSheet visible={sheet === 'log'} onClose={close} />
       <KhataSheet visible={sheet === 'khata'} onClose={close} />
       <SubscriptionSheet visible={sheet === 'sub'} onClose={close} />
-      <AssetSheet visible={sheet === 'asset'} onClose={close} />
+      <SubscriptionPromptSheet
+        // iOS may not present two RN Modals at once, so the prompt waits for the others.
+        due={sheet || detail ? [] : prompt}
+        currentMonth={`${todayISO.slice(0, 8)}01`}
+        onClose={() => setDismissed({ on: todayISO, keys: [...dismissedKeys, ...prompt.map(cycleKey)] })}
+      />
       <StartingMoneySheet visible={sheet === 'start'} onClose={close} initial={summary.data?.starting_money ?? null} />
       <EntryDetailSheet
         visible={detail !== null}

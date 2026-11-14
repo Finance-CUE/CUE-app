@@ -1,0 +1,27 @@
+# Render Blueprint: Dashboard > New > Blueprint, pick this repo.
+# Secrets are marked sync: false - Render asks for them on first deploy and
+# never reads them from this file.
+services:
+  - type: web
+    name: cue-backend
+    runtime: docker
+    plan: free
+    region: singapore # closest Render region to India
+    rootDir: apps/backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: false # deploy on purpose, not on every push
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      # Native apps send no Origin header; this only matters for Expo web.
+      - key: CORS_ORIGINS
+        value: ""

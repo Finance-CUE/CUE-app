@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "CUE",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,12 +12,19 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#324357",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.WRITE_CONTACTS"
+      ],
+      "permissions": [
+        "android.permission.READ_CONTACTS"
+      ],
+      "package": "in.cuemoney.app"
     },
     "web": {
       "output": "static",
@@ -28,16 +35,33 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#FAF8F6",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
       ],
-      "expo-image"
+      "expo-image",
+      "expo-notifications",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "CUE uses your contacts only so you can pick a name for a khata entry."
+        }
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f1d10b66-6b48-49a0-8054-411650c392e8"
+      }
     }
   }
 }

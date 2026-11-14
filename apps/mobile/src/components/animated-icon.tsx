@@ -33,7 +33,7 @@ export function AnimatedSplashOverlay() {
     },
   });
 
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
+  const image = <Image style={styles.splashImage} source={require('@/assets/images/splash-icon.png')} />;
 
   return animate ? (
     <Animated.View
@@ -138,9 +138,14 @@ const styles = StyleSheet.create({
     height: 128,
     position: 'absolute',
   },
+  // Matches the native splash (app.json) so the hand-off is seamless.
+  splashImage: {
+    width: 76,
+    height: 76,
+  },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    backgroundColor: '#FAF8F6',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,

@@ -103,22 +103,53 @@ api.interceptors.response.use(
 );
 
 /**
- * Turns an axios failure into a message safe to show a user.
+ * Renew the access token now, e.g. after the server changed what the token
+ * carries. Shares the in-flight refresh with the 401 interceptor.
+ */
+export async function refreshNow(): Promise<boolean> {
+  refreshInFlight = refreshInFlight ?? refreshSession();
+  const refreshed = await refreshInFlight;
+  refreshInFlight = null;
+  return refreshed;
+}
+
+/** The backend's stable error code (e.g. "email_not_verified"), if it sent one. */
+export function errorCode(error: unknown): string | null {
+  if (!axios.isAxiosError(error)) return null;
+  const code = error.response?.data?.code;
+  return typeof code === 'string' ? code : null;
+}
+
+// No response at all is usually no internet, but can't be told apart from an
+// unreachable server without a connectivity check, so the wording covers both.
+export const MSG_OFFLINE = "Couldn't connect to CUE. Check your internet connection and try again.";
+export const MSG_SLOW = 'CUE is taking longer than usual to respond. Please try again in a moment.';
+export const MSG_SERVER = 'Something went wrong on our side. Please try again in a moment.';
+
+/**
+ * Turns a failure into a sentence safe to show a user.
  *
- * The backend already returns generic strings for auth failures; this is the
- * client-side guard against rendering a raw network error or an unexpected
- * upstream body into the UI.
+ * The backend sends a plain-English `detail` for every error it knows about;
+ * this covers the cases where no such sentence exists - no connection, a slow
+ * server (a free-tier backend can take ~50s to wake), or an unexpected body.
  */
 export function toErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
     const detail = error.response?.data?.detail;
 
-    if (typeof detail === 'string' && detail.length > 0 && detail.length < 200) {
+    if (typeof detail === 'string' && detail.length > 0 && detail.length < 300) {
       return detail;
     }
 
     if (!error.response) {
-      return 'Could not reach CUE. Check your connection and try again.';
+      if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+        return MSG_SLOW;
+      }
+      return MSG_OFFLINE;
+    }
+
+    if (error.response.status >= 500) {
+      return MSG_SERVER;
     }
   }
 

@@ -19,7 +19,7 @@ os.environ.setdefault(
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.api.dependencies.auth import get_auth_client  # noqa: E402
+from app.api.dependencies.auth import get_auth_client, get_profile_store  # noqa: E402
 from app.core.config import Settings  # noqa: E402
 from app.features.auth.identifiers import (  # noqa: E402
     InvalidPhoneNumberError,
@@ -125,8 +125,14 @@ class _FakeAuth:
         self.calls.append(("sign_up", kwargs))
 
 
+class _NoPhoneOwners:
+    async def phone_owner(self, phone_e164: str) -> None:
+        return None
+
+
 def _client(auth: _FakeAuth) -> TestClient:
     app.dependency_overrides[get_auth_client] = lambda: auth
+    app.dependency_overrides[get_profile_store] = lambda: _NoPhoneOwners()
     return TestClient(app)
 
 
@@ -204,7 +210,8 @@ def test_signup_rejects_weak_passwords(weak):
     assert response.status_code == 422
 
 
-def test_signup_uses_the_email_as_the_login_identifier():
+def test_signup_creates_the_account_but_does_not_sign_in():
+    """No session until the emailed code is verified."""
     auth = _FakeAuth()
     with _client(auth) as client:
         response = client.post(
@@ -218,13 +225,12 @@ def test_signup_uses_the_email_as_the_login_identifier():
         )
 
     assert response.status_code == 201
+    assert response.json() == {"status": "verification_required", "email": "test@example.com"}
+    assert "access_token" not in response.text
     signup_call = next(kwargs for name, kwargs in auth.calls if name == "sign_up")
     assert signup_call["email"] == "test@example.com"
     assert signup_call["phone"] == VALID_PHONE
-
-    # Signup must sign in with the same address, never a derived identifier.
-    signin_call = next(kwargs for name, kwargs in auth.calls if name == "sign_in")
-    assert signin_call["email"] == "test@example.com"
+    assert not any(name == "sign_in" for name, _ in auth.calls)
 
 
 def test_protected_route_requires_a_token():
