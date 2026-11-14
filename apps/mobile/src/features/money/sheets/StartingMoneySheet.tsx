@@ -17,15 +17,17 @@ export function StartingMoneySheet({
   visible,
   onClose,
   initial,
-  spentSince = 0,
+  balanceNow = null,
 }: {
   visible: boolean;
   onClose: () => void;
   initial: StartingMoney | null;
-  /** Spends logged since `initial` was saved; the bank figure opens with them taken off. */
-  spentSince?: number;
+  /** Current balance (after spends and money received since `initial`); bank opens at this less cash. */
+  balanceNow?: number | null;
 }) {
-  const bankNow = initial ? Math.max(0, initial.bank_paise - spentSince) : undefined;
+  const bankNow = initial
+    ? Math.max(0, (balanceNow ?? initial.bank_paise + initial.cash_paise) - initial.cash_paise)
+    : undefined;
   const [bank, setBank] = useState(toText(bankNow));
   const [cash, setCash] = useState(toText(initial?.cash_paise));
   const mutation = useSetStartingMoney();

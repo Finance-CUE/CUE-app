@@ -72,6 +72,12 @@ class SpendUpdate(_StrictRequest):
     spent_on: _BoundedDate
 
 
+class SettleRequest(_StrictRequest):
+    """How a borrowed amount was paid back; recorded on the logged spend."""
+
+    method: Literal["cash", "upi"] | None = None
+
+
 class StartingMoneyPut(_StrictRequest):
     bank_paise: _NonNegative
     cash_paise: _NonNegative
@@ -146,6 +152,13 @@ class DueCycle(BaseModel):
     billing_on: date
 
 
+class Credit(BaseModel):
+    """Money that came back into the balance: a lent Khata entry marked settled."""
+
+    amount_paise: int
+    at: datetime
+
+
 class TrendPoint(BaseModel):
     date: date
     balance_paise: int | None
@@ -176,6 +189,10 @@ class MoneySummary(BaseModel):
     starting_money: StartingMoney | None
     # Spends logged after the balance was last set; already taken off net_worth_paise.
     spent_since_update_paise: int = 0
+    # Money lent and marked settled (paid back to you) since then; already added.
+    received_since_update_paise: int = 0
+    # Bank + cash now: the saved balance, less spends, plus money received back.
+    balance_paise: int | None = None
     owed_to_you_paise: int
     you_owe_paise: int
 

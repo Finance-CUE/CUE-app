@@ -2,6 +2,7 @@ import { deviceTimeZone } from '@/features/money/dates';
 import { api } from '@/lib/api';
 import type {
   CycleAnswer,
+  PaymentMethod,
   DueCycle,
   KhataEntry,
   KhataInput,
@@ -57,8 +58,9 @@ export async function addKhata(input: KhataInput): Promise<KhataEntry> {
   return result.data;
 }
 
-export async function settleKhata(id: string): Promise<void> {
-  await api.post(`/money/khata/${id}/settle`);
+/** Settles an entry. For money you borrowed, `method` says how you paid it back. */
+export async function settleKhata({ id, method }: { id: string; method?: PaymentMethod }): Promise<void> {
+  await api.post(`/money/khata/${id}/settle`, method ? { method } : {});
 }
 
 export async function deleteKhata(id: string): Promise<void> {

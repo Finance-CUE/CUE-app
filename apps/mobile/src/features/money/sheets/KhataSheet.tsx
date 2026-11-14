@@ -1,12 +1,12 @@
 import { Contact, requestPermissionsAsync } from 'expo-contacts';
 import { useState } from 'react';
-import { Platform, Text } from 'react-native';
+import { Alert, Platform, Text } from 'react-native';
 
 import { COLORS } from '@/features/assessment/theme';
 
 import { ChipRow, PrimaryButton, SecondaryButton, TextField } from '@/features/money/components/ui';
-import { parseRupeesToPaise } from '@/features/money/format';
-import { useAddKhata } from '@/features/money/hooks';
+import { formatRupees, parseRupeesToPaise } from '@/features/money/format';
+import { useAddKhata, useSummary } from '@/features/money/hooks';
 import type { Direction } from '@/features/money/types';
 import { FormError, Sheet, useGuardedSubmit } from './Sheet';
 
@@ -22,6 +22,7 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const [note, setNote] = useState('');
   const [contactsNote, setContactsNote] = useState<string | null>(null);
   const mutation = useAddKhata();
+  const balance = useSummary(visible).data?.balance_paise ?? null;
   const { run, error } = useGuardedSubmit(visible);
 
   const paise = parseRupeesToPaise(amount);
@@ -47,6 +48,22 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
   };
 
   const submit = () => {
+    if (!valid || paise === null) return;
+    if (direction === 'lent' && balance !== null && paise > balance) {
+      Alert.alert(
+        'This seems to be more than your current balance',
+        `You're lending ${formatRupees(paise)} but your balance is ${formatRupees(balance)}. Is the amount correct, or is this something else?`,
+        [
+          { text: 'Edit amount', style: 'cancel' },
+          { text: 'Save anyway', onPress: save },
+        ],
+      );
+      return;
+    }
+    save();
+  };
+
+  const save = () => {
     if (!valid || paise === null) return;
     void run(
       () => mutation.mutateAsync({ direction, person: name, amount_paise: paise, note: note.trim() || null }),

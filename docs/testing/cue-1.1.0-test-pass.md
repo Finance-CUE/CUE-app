@@ -46,24 +46,26 @@ Khata (lend / borrow)
 21. Tap Lend / Borrow, choose I lent, enter a name, amount and note, and Save. It appears under Money lent in Khata.
 22. Add an I borrowed entry for someone else: it appears under Money borrowed.
 23. Tap Pick from contacts: Android asks for contacts permission once. Saying Deny doesn't crash anything; you can still type the name.
-24. Open a person and tap Mark settled on an entry: it leaves the open list and their total updates.
-25. Net worth includes money lent to you and subtracts money you borrowed. Check it adds up.
+24. Adding a Khata entry does not change Net worth: it is only a record.
+25. Lend more than your current balance: CUE asks "This seems to be more than your current balance". Edit amount takes you back; Save anyway saves it.
+26. Open someone who owes you and tap Mark received: the entry leaves the list and your Net worth goes up by that amount.
+27. Open someone you owe and tap Mark paid back: CUE asks Cash or UPI. Pick one: Net worth goes down by that amount and Today shows "Paid back to [name] via UPI" (or "in cash").
 
 Subscriptions
-26. Tap Subscription and add "Netflix", ₹199, billing day = tomorrow's date: it shows under Upcoming as "Due tomorrow".
-27. Tomorrow at about 10 am, a notification asks "Is Netflix still active?". Tap it: CUE opens and asks the same question. Tap Yes: the payment is logged as a spend for that day.
-28. For another subscription, answer No: it moves to Stopped and isn't asked about again.
+28. Tap Subscription and add "Netflix", ₹199, billing day = tomorrow's date: it shows under Upcoming as "Due tomorrow".
+29. Tomorrow at about 10 am, a notification asks "Is Netflix still active?". Tap it: CUE opens and asks the same question. Tap Yes: the payment is logged as a spend for that day.
+30. For another subscription, answer No: it moves to Stopped and isn't asked about again.
 
 Nudges (these need a few days of normal use)
-29. Allow notifications when Android asks. If you deny them, the You tab says notifications are off and Open settings takes you to turn them on.
-30. The three Nudge preferences switches stay the way you set them after closing and reopening the app.
-31. Log your real spends for 3 or more days. Tell us whether nudge timing and tone felt helpful or annoying. At most one spending nudge per day, and none late at night.
-32. On Sunday evening (around 6 pm) you get a weekly reflection. Turn Weekly reflection off: it stops.
+31. Allow notifications when Android asks. If you deny them, the You tab says notifications are off and Open settings takes you to turn them on.
+32. The three Nudge preferences switches stay the way you set them after closing and reopening the app.
+33. Log your real spends for 3 or more days. Tell us whether nudge timing and tone felt helpful or annoying. At most one spending nudge per day, and none late at night.
+34. On Sunday evening (around 6 pm) you get a weekly reflection. Turn Weekly reflection off: it stops.
 
 Account and general
-33. Close and reopen the app over a few days: you stay signed in.
-34. Sign in on a second phone with the same account: both stay signed in. Signing out on one doesn't sign out the other.
-35. Sign out: you're back on the login screen and get no more nudges. Sign back in: all your data is still there.
-36. If two of you share a phone: sign out, have the other person sign in to their own account, and check none of the first person's spends, Khata, balance or profile show up.
-37. Airplane mode, then open each tab: you see a clear message, not a crash. Turn it off and pull down: data comes back.
-38. Anything confusing, ugly, slow or missing: write it down. First impressions matter most.
+35. Close and reopen the app over a few days: you stay signed in.
+36. Sign in on a second phone with the same account: both stay signed in. Signing out on one doesn't sign out the other.
+37. Sign out: you're back on the login screen and get no more nudges. Sign back in: all your data is still there.
+38. If two of you share a phone: sign out, have the other person sign in to their own account, and check none of the first person's spends, Khata, balance or profile show up.
+39. Airplane mode, then open each tab: you see a clear message, not a crash. Turn it off and pull down: data comes back.
+40. Anything confusing, ugly, slow or missing: write it down. First impressions matter most.

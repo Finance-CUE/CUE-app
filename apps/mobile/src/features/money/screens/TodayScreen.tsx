@@ -111,6 +111,7 @@ export function TodayScreen() {
   };
   const nw = summary.data?.net_worth_paise ?? null;
   const spentSince = summary.data?.spent_since_update_paise ?? 0;
+  const receivedSince = summary.data?.received_since_update_paise ?? 0;
   const spendDetail = (s: Spend): Detail => ({
     title: s.description,
     lines: [
@@ -198,9 +199,12 @@ export function TodayScreen() {
               <Text style={{ fontSize: 24, color: COLORS.white, fontFamily: HEADING_FONT }}>
                 {nw === null ? 'Add your first financial details to see your full picture.' : formatRupees(nw)}
               </Text>
-              {nw !== null && spentSince > 0 ? (
+              {nw !== null && (spentSince > 0 || receivedSince > 0) ? (
                 <Text style={{ fontSize: 12, color: theme.onDeep }}>
-                  After {formatRupees(spentSince)} spent since you last updated your balance
+                  Since your last balance update:
+                  {spentSince > 0 ? ` ${formatRupees(spentSince)} spent` : ''}
+                  {spentSince > 0 && receivedSince > 0 ? ',' : ''}
+                  {receivedSince > 0 ? ` ${formatRupees(receivedSince)} received back` : ''}
                 </Text>
               ) : null}
               <TouchableOpacity accessibilityRole="button" onPress={() => setSheet('start')} activeOpacity={0.7}>
@@ -401,7 +405,7 @@ export function TodayScreen() {
         visible={sheet === 'start'}
         onClose={close}
         initial={summary.data?.starting_money ?? null}
-        spentSince={spentSince}
+        balanceNow={summary.data?.balance_paise ?? null}
       />
       <EntryDetailSheet
         visible={detail !== null}

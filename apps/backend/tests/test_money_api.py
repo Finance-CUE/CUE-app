@@ -17,6 +17,7 @@ from app.features.money.repository import MoneyConflictError, MoneyStoreError
 from app.features.money.router import get_money_repo
 from app.features.money.schemas import (
     BalanceSnapshot,
+    Credit,
     KhataEntry,
     NudgeTemplate,
     Nudges,
@@ -53,7 +54,7 @@ class FakeRepo:
         self.spends: dict[str, list[Spend]] = {}
         self.starting: dict[str, StartingMoney] = {}
         self.khata: dict[str, list[KhataEntry]] = {}
-        self.settled: set[str] = set()
+        self.settled: dict[str, datetime] = {}
         self.subs: dict[str, list[Subscription]] = {}
         self.cycles: dict[str, dict[str, set[date]]] = {}
         self.history: dict[str, list[BalanceSnapshot]] = {}
@@ -137,10 +138,18 @@ class FakeRepo:
         return entry
 
     async def settle_khata(self, user_id, entry_id):
-        if any(k.id == entry_id for k in await self.list_open_khata(user_id)):
-            self.settled.add(entry_id)
-            return True
-        return False
+        for k in await self.list_open_khata(user_id):
+            if k.id == entry_id:
+                self.settled[entry_id] = _now()
+                return k
+        return None
+
+    async def list_received_after(self, user_id, after):
+        return [
+            Credit(amount_paise=k.amount_paise, at=self.settled[k.id])
+            for k in self.khata.get(user_id, [])
+            if k.direction == "lent" and k.id in self.settled and self.settled[k.id] > after
+        ]
 
     async def delete_khata(self, user_id, entry_id):
         return self._drop(self.khata.get(user_id, []), entry_id)
@@ -301,6 +310,7 @@ def test_user_b_cannot_delete_or_settle_user_a_rows():
         assert c.delete(f"{BASE}/khata/{khata_id}").status_code == 404
     assert len(repo.spends[USER_A]) == 1
     assert len(repo.khata[USER_A]) == 1 and not repo.settled
+    assert len(repo.spends[USER_A]) == 1
 
 
 def test_summary_null_net_worth_until_starting_money_set():
@@ -322,10 +332,11 @@ def test_net_worth_takes_off_spends_logged_after_the_balance_was_set():
         # Updating the balance again resets the reference point.
         c.put(f"{BASE}/starting-money", json={"bank_paise": 700, "cash_paise": 50})
         after = c.get(f"{BASE}/summary").json()
-    assert s["net_worth_paise"] == 1000 + 50 + 400 - 100 - 300
+    # Open Khata entries are records only: they never move net worth.
+    assert s["net_worth_paise"] == 1000 + 50 - 300
     assert s["spent_since_update_paise"] == 300
     assert (s["owed_to_you_paise"], s["you_owe_paise"]) == (400, 100)
-    assert after["net_worth_paise"] == 700 + 50 + 400 - 100
+    assert after["net_worth_paise"] == 700 + 50
     assert after["spent_since_update_paise"] == 0
 
 
@@ -476,17 +487,50 @@ def test_invalid_tz_is_422(path):
         assert c.get(f"{PROFILE}/{path}", params={**params, "tz": "../x"}).status_code == 422
 
 
-def test_settled_khata_leaves_list_and_summary():
+def test_settling_lent_money_puts_it_back_in_the_balance():
     with _client(FakeRepo()) as c:
         c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
         body = {"direction": "lent", "person": "A", "amount_paise": 400}
         entry = c.post(f"{BASE}/khata", json=body)
         assert entry.status_code == 201
+        before = c.get(f"{BASE}/summary").json()
         assert c.post(f"{BASE}/khata/{entry.json()['id']}/settle").status_code == 204
         assert c.get(f"{BASE}/khata").json() == []
         s = c.get(f"{BASE}/summary").json()
+        spends = c.get(f"{BASE}/spends", params={"start": "2000-01-01", "end": "2000-02-01"}).json()
     assert s["owed_to_you_paise"] == 0
-    assert s["net_worth_paise"] == 1000
+    # Lending was only a record; getting the money back is what adds it.
+    assert before["net_worth_paise"] == 1000
+    assert s["net_worth_paise"] == s["balance_paise"] == 1400
+    assert s["received_since_update_paise"] == 400
+    assert spends == []
+
+
+def test_settling_borrowed_money_logs_a_paid_back_spend():
+    repo = FakeRepo()
+    with _client(repo) as c:
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
+        body = {"direction": "borrowed", "person": "Ravi", "amount_paise": 300}
+        entry = c.post(f"{BASE}/khata", json=body).json()
+        before = c.get(f"{BASE}/summary").json()
+        settled = c.post(f"{BASE}/khata/{entry['id']}/settle", json={"method": "upi"})
+        s = c.get(f"{BASE}/summary").json()
+        # A repeat settle is a 404 and logs nothing more.
+        assert c.post(f"{BASE}/khata/{entry['id']}/settle").status_code == 404
+        # Unknown payment methods are refused.
+        other = c.post(f"{BASE}/khata", json={**body, "person": "Asha"}).json()
+        bad = c.post(f"{BASE}/khata/{other['id']}/settle", json={"method": "cheque"})
+        plain = c.post(f"{BASE}/khata/{other['id']}/settle")
+    assert settled.status_code == 204 and bad.status_code == 422 and plain.status_code == 204
+    logged = repo.spends[USER_A]
+    assert [(x.description, x.amount_paise, x.category) for x in logged] == [
+        ("Paid back to Ravi via UPI", 300, "other"),
+        ("Paid back to Asha", 300, "other"),
+    ]
+    # Borrowing was only a record; paying it back is what takes money out.
+    assert before["net_worth_paise"] == 1000
+    assert s["net_worth_paise"] == s["balance_paise"] == 700
+    assert s["you_owe_paise"] == 0
 
 
 def test_delete_returns_204_then_404_and_bad_id_is_422():

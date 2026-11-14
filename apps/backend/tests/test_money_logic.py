@@ -79,12 +79,13 @@ def test_due_months_skips_answered_and_clamps():
 
 
 def test_net_worth_is_none_without_starting_money():
-    assert net_worth(None, 0, 0) is None
+    assert net_worth(None) is None
 
 
-def test_net_worth_ignores_spends_and_is_bank_cash_lent_borrowed():
+def test_net_worth_is_balance_less_later_spends_plus_money_received_back():
     start = StartingMoney(bank_paise=50_000_00, cash_paise=2_000_00, set_at=datetime.now(UTC))
-    assert net_worth(start, 3_000_00, 1_000_00) == 50_000_00 + 2_000_00 + 3_000_00 - 1_000_00
+    assert net_worth(start) == 52_000_00
+    assert net_worth(start, 1_000_00, 300_00) == 52_000_00 - 1_000_00 + 300_00
 
 
 def _snap(day, hour, bank, cash=0):
@@ -197,3 +198,15 @@ def test_billing_day_required_for_subscription_and_forbidden_otherwise(category,
     else:
         with pytest.raises(ValidationError):
             SpendCreate.model_validate(payload)
+
+
+def test_trend_adds_money_received_back_after_the_snapshot():
+    from app.features.money.schemas import Credit
+
+    history = [_snap(3, 9, 1000)]
+    credits = [
+        Credit(amount_paise=400, at=datetime(2026, 10, 5, 12, tzinfo=IST)),
+        Credit(amount_paise=99, at=datetime(2026, 10, 3, 8, tzinfo=IST)),  # before the snapshot
+    ]
+    pts = build_trend(history, [], date(2026, 10, 3), date(2026, 10, 6), IST, credits)
+    assert [p.balance_paise for p in pts] == [1000, 1000, 1400, 1400]

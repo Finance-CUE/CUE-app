@@ -67,8 +67,13 @@ function NetWorthBody() {
             <Card>
               <Row title="Bank" amount={start ? formatRupees(start.bank_paise) : '—'} />
               <Row title="Cash" amount={start ? formatRupees(start.cash_paise) : '—'} />
-              <Row title="Money lent" amount={formatRupees(s?.owed_to_you_paise ?? 0)} />
-              <Row title="Money borrowed" amount={formatRupees(s?.you_owe_paise ?? 0)} />
+              {s && s.received_since_update_paise > 0 ? (
+                <Row
+                  title="Received back"
+                  subtitle="Khata money paid back to you since your last update"
+                  amount={formatRupees(s.received_since_update_paise)}
+                />
+              ) : null}
               {s && s.spent_since_update_paise > 0 ? (
                 <Row
                   title="Spent since last update"
@@ -78,6 +83,16 @@ function NetWorthBody() {
               ) : null}
             </Card>
           )}
+
+          {s && (s.owed_to_you_paise > 0 || s.you_owe_paise > 0) ? (
+            <Card>
+              <Text style={{ fontSize: 13, color: COLORS.muted, marginBottom: 4 }}>
+                Khata is a record. These count once you mark them settled.
+              </Text>
+              <Row title="Owed to you" amount={formatRupees(s.owed_to_you_paise)} />
+              <Row title="You owe" amount={formatRupees(s.you_owe_paise)} />
+            </Card>
+          ) : null}
 
           <Card>
             <Text style={{ fontSize: 16, color: COLORS.text, fontFamily: HEADING_FONT, marginBottom: 12 }}>

@@ -63,6 +63,10 @@ export type MoneySummary = {
   you_owe_paise: number;
   /** Logged after the balance was last set; already taken off net_worth_paise. */
   spent_since_update_paise: number;
+  /** Money lent and marked settled since then; already added to net_worth_paise. */
+  received_since_update_paise: number;
+  /** Bank + cash now, or null before a balance is set. Equals net worth. */
+  balance_paise: number | null;
 };
 
 export type Nudges = {
@@ -105,5 +109,6 @@ export type SubscriptionInput = {
   billing_day: number;
   starts_on: string;
 };
+export type PaymentMethod = 'cash' | 'upi';
 export type CycleAnswer = { month: string; active: boolean };
 export type StartingMoneyInput = { bank_paise: number; cash_paise: number };

@@ -3,7 +3,7 @@
 import calendar
 from datetime import date, timedelta, tzinfo
 
-from app.features.money.schemas import BalanceSnapshot, Spend, StartingMoney, TrendPoint
+from app.features.money.schemas import BalanceSnapshot, Credit, Spend, StartingMoney, TrendPoint
 
 
 def billing_date(month_first: date, billing_day: int) -> date:
@@ -43,28 +43,28 @@ def due_months(
 
 def net_worth(
     starting: StartingMoney | None,
-    lent_open_paise: int,
-    borrowed_open_paise: int,
     spent_since_paise: int = 0,
+    received_since_paise: int = 0,
 ) -> int | None:
     """None until the user has set starting money.
 
     The balance the user typed already includes everything spent before that
-    moment, so only spends logged after it come off.
+    moment, so only spends logged after it come off. Open Khata entries are a
+    record only and never count; money moves when an entry is settled (money
+    lent comes back in, money borrowed is paid out as a spend).
     """
     if starting is None:
         return None
-    return (
-        starting.bank_paise
-        + starting.cash_paise
-        + lent_open_paise
-        - borrowed_open_paise
-        - spent_since_paise
-    )
+    return starting.bank_paise + starting.cash_paise - spent_since_paise + received_since_paise
 
 
 def build_trend(
-    history: list[BalanceSnapshot], spends: list[Spend], start: date, today: date, tz: tzinfo
+    history: list[BalanceSnapshot],
+    spends: list[Spend],
+    start: date,
+    today: date,
+    tz: tzinfo,
+    credits: list[Credit] = (),
 ) -> list[TrendPoint]:
     """One point per local day: the latest snapshot on or before it, less spends logged
     after that snapshot and dated on or before the day (None before any snapshot)."""
@@ -85,6 +85,11 @@ def build_trend(
                 for s in spends
                 if s.created_at > snap.recorded_at and s.spent_on <= day
             )
-            balance = snap.bank_paise + snap.cash_paise - since
+            received = sum(
+                c.amount_paise
+                for c in credits
+                if c.at > snap.recorded_at and c.at.astimezone(tz).date() <= day
+            )
+            balance = snap.bank_paise + snap.cash_paise - since + received
         points.append(TrendPoint(date=day, balance_paise=balance, spent_paise=spent.get(day, 0)))
     return points

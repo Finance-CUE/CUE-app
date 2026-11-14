@@ -91,9 +91,14 @@ def test_settle_only_touches_open_entries():
 
     def handler(request):
         seen.append(request)
-        return httpx.Response(200, json=[{"id": ROW_ID}])
+        return httpx.Response(
+            200,
+            json=[{"id": ROW_ID, "direction": "lent", "person": "A", "amount_paise": 5,
+                   "note": None, "created_at": "2026-10-24T08:00:00+00:00"}],
+        )  # fmt: skip
 
-    assert _run(handler, lambda repo: repo.settle_khata(USER, ROW_ID)) is True
+    entry = _run(handler, lambda repo: repo.settle_khata(USER, ROW_ID))
+    assert entry is not None and entry.direction == "lent"
 
     request = seen[0]
     assert request.method == "PATCH"
