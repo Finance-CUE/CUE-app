@@ -61,6 +61,8 @@ export type MoneySummary = {
   starting_money: StartingMoney | null;
   owed_to_you_paise: number;
   you_owe_paise: number;
+  /** Logged after the balance was last set; already taken off net_worth_paise. */
+  spent_since_update_paise: number;
 };
 
 export type Nudges = {
@@ -84,6 +86,12 @@ export type SpendInput = {
   category: Category;
   spent_on: string;
   billing_day?: number;
+};
+export type SpendUpdate = {
+  description: string;
+  amount_paise: number;
+  category: Exclude<Category, 'subscription'>;
+  spent_on: string;
 };
 export type KhataInput = {
   direction: Direction;

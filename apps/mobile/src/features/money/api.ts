@@ -10,6 +10,7 @@ import type {
   PlannedNudge,
   Spend,
   SpendInput,
+  SpendUpdate,
   StartingMoney,
   StartingMoneyInput,
   Subscription,
@@ -24,6 +25,11 @@ export async function fetchSpends(start: string, end: string): Promise<Spend[]> 
 
 export async function logSpend(input: SpendInput): Promise<Spend> {
   const result = await api.post<Spend>('/money/spends', input);
+  return result.data;
+}
+
+export async function updateSpend({ id, ...input }: SpendUpdate & { id: string }): Promise<Spend> {
+  const result = await api.patch<Spend>(`/money/spends/${id}`, input);
   return result.data;
 }
 

@@ -68,6 +68,7 @@ function useMoneyMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>) {
 }
 
 export const useLogSpend = () => useMoneyMutation(moneyApi.logSpend);
+export const useUpdateSpend = () => useMoneyMutation(moneyApi.updateSpend);
 export const useDeleteSpend = () => useMoneyMutation(moneyApi.deleteSpend);
 export const useSetStartingMoney = () => useMoneyMutation(moneyApi.putStartingMoney);
 export const useAddKhata = () => useMoneyMutation(moneyApi.addKhata);

@@ -8,7 +8,7 @@ import { useAuthStore } from '@/features/auth/store';
 import { CategoryIcon, ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { Card, EmptyCard, Fab, Row, ScreenHeader, SectionHeader, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
-import { daysUntil, formatDate, formatDateTime, greeting, startOfWeek, toISODate, weekDays } from '../dates';
+import { daysUntil, formatDate, formatDateTime, greeting, toISODate, weekDays, weekStartBack } from '../dates';
 import { formatRupees } from '../format';
 import { useDeleteSpend, useDeleteSubscription, useDueSubscriptions, useSpends, useSubscriptions, useSummary, useToday } from '../hooks';
 import { EntryDetailSheet } from '../sheets/EntryDetailSheet';
@@ -17,14 +17,21 @@ import { LogSpendSheet } from '../sheets/LogSpendSheet';
 import { StartingMoneySheet } from '../sheets/StartingMoneySheet';
 import { SubscriptionPromptSheet } from '../sheets/SubscriptionPromptSheet';
 import { SubscriptionSheet } from '../sheets/SubscriptionSheet';
-import type { DueCycle } from '../types';
+import type { DueCycle, Spend } from '../types';
 
 type SheetName = 'log' | 'khata' | 'sub' | 'start' | null;
-type Detail = { title: string; lines: string[]; onDelete: () => Promise<void> };
+type Detail = { title: string; lines: string[]; onDelete: () => Promise<void>; onEdit?: () => void };
 
 const DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const BAR_MAX = 64;
 const LOAD_ERROR = 'Could not load. Pull to refresh.';
+const MAX_WEEKS_BACK = 52;
+
+function weekTitle(weeksBack: number, monday: Date): string {
+  if (weeksBack === 0) return 'This week';
+  if (weeksBack === 1) return 'Last week';
+  return `Week of ${formatDate(toISODate(monday))}`;
+}
 
 function dueLabel(n: number): string {
   if (n <= 0) return 'Due today';
@@ -49,12 +56,20 @@ export function TodayScreen() {
 
   const now = useToday();
   const todayISO = toISODate(now);
-  const days = weekDays(now);
-  const weekStart = toISODate(startOfWeek(now));
+  // 0 = this week; earlier weeks let people look back and log what they missed.
+  const [weeksBack, setWeeksBack] = useState(0);
+  const monday = weekStartBack(now, weeksBack);
+  const days = weekDays(monday);
+  const weekStart = toISODate(days[0]);
   const weekEnd = toISODate(days[6]);
-  // null = today, so the selection follows midnight.
+  // null = the default day (today, or Sunday of a past week), so it follows midnight.
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const selected = selectedDay ?? todayISO;
+  const selected = selectedDay ?? (weeksBack === 0 ? todayISO : weekEnd);
+  const [editing, setEditing] = useState<Spend | null>(null);
+  const changeWeek = (delta: number) => {
+    setWeeksBack((w) => Math.min(MAX_WEEKS_BACK, Math.max(0, w + delta)));
+    setSelectedDay(null);
+  };
 
   const summary = useSummary();
   const spends = useSpends(weekStart, weekEnd);
@@ -82,9 +97,35 @@ export function TodayScreen() {
   const weekMax = Math.max(...totals, 0);
   const selIdx = Math.max(0, days.findIndex((d) => toISODate(d) === selected));
   const selCount = byDay(selected).length;
-  const todaySpends = byDay(todayISO);
-  const close = () => setSheet(null);
+  const daySpends = byDay(selected);
+  const isToday = selected === todayISO;
+  const close = () => {
+    setSheet(null);
+    setEditing(null);
+  };
   const nw = summary.data?.net_worth_paise ?? null;
+  const spentSince = summary.data?.spent_since_update_paise ?? 0;
+  const spendDetail = (s: Spend): Detail => ({
+    title: s.description,
+    lines: [
+      formatRupees(s.amount_paise),
+      categoryLabel(s.category),
+      formatDate(s.spent_on),
+      `Logged ${formatDateTime(s.created_at)}`,
+    ],
+    onDelete: async () => {
+      await delSpend.mutateAsync(s.id);
+    },
+    // Subscription payments are changed through the subscription, not here.
+    onEdit:
+      s.category === 'subscription'
+        ? undefined
+        : () => {
+            setDetail(null);
+            setEditing(s);
+            setSheet('log');
+          },
+  });
   const active = (subs.data ?? []).filter((s) => s.active && s.next_billing_on);
   const upcoming = active.filter((s) => daysUntil(s.next_billing_on ?? '', now) <= 7);
   const later = active.filter((s) => !upcoming.includes(s));
@@ -137,11 +178,16 @@ export function TodayScreen() {
           ) : (
             <>
               {nw === null ? null : (
-                <Text style={{ fontSize: 11, letterSpacing: 1.5, color: COLORS.cardDarkText }}>TOTAL NET WORTH</Text>
+                <Text style={{ fontSize: 11, letterSpacing: 1.5, color: COLORS.cardDarkText }}>NET WORTH</Text>
               )}
               <Text style={{ fontSize: 24, color: COLORS.white, fontFamily: HEADING_FONT }}>
                 {nw === null ? 'Add your first financial details to see your full picture.' : formatRupees(nw)}
               </Text>
+              {nw !== null && spentSince > 0 ? (
+                <Text style={{ fontSize: 12, color: COLORS.cardDarkText }}>
+                  After {formatRupees(spentSince)} spent since you last updated your balance
+                </Text>
+              ) : null}
               <TouchableOpacity accessibilityRole="button" onPress={() => setSheet('start')} activeOpacity={0.7}>
                 <Text style={{ color: COLORS.linkOnDark, fontSize: 14, fontWeight: '600' }}>
                   Update balance
@@ -189,7 +235,33 @@ export function TodayScreen() {
         </View>
 
         <View style={{ gap: 12 }}>
-          <SectionHeader title="This week" />
+          <SectionHeader
+            title={weekTitle(weeksBack, monday)}
+            right={
+              <View style={{ flexDirection: 'row', gap: 4 }}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous week"
+                  accessibilityState={{ disabled: weeksBack >= MAX_WEEKS_BACK }}
+                  disabled={weeksBack >= MAX_WEEKS_BACK}
+                  onPress={() => changeWeek(1)}
+                  hitSlop={10}
+                  style={{ paddingHorizontal: 10, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 20, color: COLORS.purple, fontWeight: '600' }}>‹</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Next week"
+                  accessibilityState={{ disabled: weeksBack === 0 }}
+                  disabled={weeksBack === 0}
+                  onPress={() => changeWeek(-1)}
+                  hitSlop={10}
+                  style={{ paddingHorizontal: 10, paddingVertical: 2, opacity: weeksBack === 0 ? 0.3 : 1 }}>
+                  <Text style={{ fontSize: 20, color: COLORS.purple, fontWeight: '600' }}>›</Text>
+                </TouchableOpacity>
+              </View>
+            }
+          />
           <Card>
             {spends.isPending ? (
               <Loading />
@@ -201,12 +273,14 @@ export function TodayScreen() {
                   {days.map((d, i) => {
                     const iso = toISODate(d);
                     const isToday = iso === todayISO;
+                    const future = iso > todayISO;
                     const h = totals[i] > 0 ? Math.max(8, (totals[i] / weekMax) * BAR_MAX) : 4;
                     return (
                       <TouchableOpacity
                         key={iso}
                         accessibilityRole="button"
                         accessibilityLabel={DAY[i]}
+                        disabled={future}
                         onPress={() => setSelectedDay(iso)}
                         activeOpacity={0.7}
                         style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6, height: BAR_MAX + 24 }}>
@@ -240,8 +314,8 @@ export function TodayScreen() {
 
         <View style={{ gap: 12 }}>
           <SectionHeader
-            title="Today"
-            right={<Text style={{ fontSize: 14, color: COLORS.muted }}>{formatRupees(total(todayISO))} spent</Text>}
+            title={isToday ? 'Today' : formatDate(selected)}
+            right={<Text style={{ fontSize: 14, color: COLORS.muted }}>{formatRupees(total(selected))} spent</Text>}
           />
           {spends.isPending ? (
             <Card>
@@ -249,31 +323,18 @@ export function TodayScreen() {
             </Card>
           ) : spends.isError ? (
             <EmptyCard text={LOAD_ERROR} />
-          ) : todaySpends.length === 0 ? (
-            <EmptyCard text="Nothing logged yet." />
+          ) : daySpends.length === 0 ? (
+            <EmptyCard text={isToday ? 'Nothing logged yet.' : 'Nothing logged on this day. Tap + to add a spend for it.'} />
           ) : (
             <Card style={{ paddingVertical: 6 }}>
-              {todaySpends.map((s) => (
+              {daySpends.map((s) => (
                 <Row
                   key={s.id}
                   left={<CategoryIcon category={s.category} color={COLORS.purple} />}
                   title={s.description}
                   subtitle={categoryLabel(s.category)}
                   amount={formatRupees(s.amount_paise)}
-                  onPress={() =>
-                    setDetail({
-                      title: s.description,
-                      lines: [
-                        formatRupees(s.amount_paise),
-                        categoryLabel(s.category),
-                        formatDate(s.spent_on),
-                        `Logged ${formatDateTime(s.created_at)}`,
-                      ],
-                      onDelete: async () => {
-                        await delSpend.mutateAsync(s.id);
-                      },
-                    })
-                  }
+                  onPress={() => setDetail(spendDetail(s))}
                 />
               ))}
             </Card>
@@ -312,7 +373,7 @@ export function TodayScreen() {
 
       <Fab onPress={() => setSheet('log')} />
 
-      <LogSpendSheet visible={sheet === 'log'} onClose={close} />
+      <LogSpendSheet visible={sheet === 'log'} onClose={close} editing={editing} defaultDate={selected} />
       <KhataSheet visible={sheet === 'khata'} onClose={close} />
       <SubscriptionSheet visible={sheet === 'sub'} onClose={close} />
       <SubscriptionPromptSheet
@@ -321,13 +382,19 @@ export function TodayScreen() {
         currentMonth={`${todayISO.slice(0, 8)}01`}
         onClose={() => setDismissed({ on: todayISO, keys: [...dismissedKeys, ...prompt.map(cycleKey)] })}
       />
-      <StartingMoneySheet visible={sheet === 'start'} onClose={close} initial={summary.data?.starting_money ?? null} />
+      <StartingMoneySheet
+        visible={sheet === 'start'}
+        onClose={close}
+        initial={summary.data?.starting_money ?? null}
+        spentSince={spentSince}
+      />
       <EntryDetailSheet
         visible={detail !== null}
         onClose={() => setDetail(null)}
         title={detail?.title ?? ''}
         lines={detail?.lines ?? []}
         onDelete={detail?.onDelete ?? (async () => {})}
+        onEdit={detail?.onEdit}
       />
     </View>
   );

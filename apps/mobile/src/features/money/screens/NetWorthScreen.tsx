@@ -35,7 +35,7 @@ function NetWorthBody() {
   const s = summary.data;
   const start = s?.starting_money;
   const points = trend.data ?? [];
-  const hasBalance = countPoints(points.map((p) => p.balance_paise)) > 1;
+  const known = countPoints(points.map((p) => p.balance_paise));
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -67,6 +67,13 @@ function NetWorthBody() {
               <Row title="Cash" amount={start ? formatRupees(start.cash_paise) : '—'} />
               <Row title="Money lent" amount={formatRupees(s?.owed_to_you_paise ?? 0)} />
               <Row title="Money borrowed" amount={formatRupees(s?.you_owe_paise ?? 0)} />
+              {s && s.spent_since_update_paise > 0 ? (
+                <Row
+                  title="Spent since last update"
+                  subtitle="Logged after you last set your balance"
+                  amount={formatRupees(-s.spent_since_update_paise)}
+                />
+              ) : null}
             </Card>
           )}
 
@@ -78,13 +85,18 @@ function NetWorthBody() {
               <Text style={{ color: COLORS.muted, fontSize: 14 }}>Could not load the trend.</Text>
             ) : trend.isLoading ? (
               <ActivityIndicator color={COLORS.purple} />
-            ) : !hasBalance ? (
+            ) : known === 0 ? (
               <Text style={{ color: COLORS.muted, fontSize: 14 }}>
                 Set your balance to see how it moves over time.
               </Text>
             ) : (
               <>
                 <Sparkline points={points} width={280} height={120} />
+                {known === 1 ? (
+                  <Text style={{ color: COLORS.muted, fontSize: 13, marginTop: 8 }}>
+                    Your line starts today. It moves as you log spends and update your balance.
+                  </Text>
+                ) : null}
                 <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
                   <Dot color={COLORS.purple} label="Balance" />
                   <Dot color={COLORS.peach} label="Spending" />

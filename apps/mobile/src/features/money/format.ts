@@ -41,3 +41,10 @@ export function formatRupees(paise: number): string {
   const body = `₹${groupIndian(whole)}.${String(rest).padStart(2, '0')}`;
   return paise < 0 ? `−${body}` : body;
 }
+
+/** Paise to the text a user would type: `15000` → `150`, `12050` → `120.50`. */
+export function paiseToInput(paise: number): string {
+  const whole = Math.floor(paise / 100);
+  const rest = paise % 100;
+  return rest === 0 ? String(whole) : `${whole}.${String(rest).padStart(2, '0')}`;
+}

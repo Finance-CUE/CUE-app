@@ -17,12 +17,16 @@ export function StartingMoneySheet({
   visible,
   onClose,
   initial,
+  spentSince = 0,
 }: {
   visible: boolean;
   onClose: () => void;
   initial: StartingMoney | null;
+  /** Spends logged since `initial` was saved; the bank figure opens with them taken off. */
+  spentSince?: number;
 }) {
-  const [bank, setBank] = useState(toText(initial?.bank_paise));
+  const bankNow = initial ? Math.max(0, initial.bank_paise - spentSince) : undefined;
+  const [bank, setBank] = useState(toText(bankNow));
   const [cash, setCash] = useState(toText(initial?.cash_paise));
   const mutation = useSetStartingMoney();
   const { run, error } = useGuardedSubmit(visible);
@@ -30,10 +34,10 @@ export function StartingMoneySheet({
   // Re-seed from the saved values each time the sheet opens.
   useEffect(() => {
     if (visible) {
-      setBank(toText(initial?.bank_paise));
+      setBank(toText(bankNow));
       setCash(toText(initial?.cash_paise));
     }
-  }, [visible, initial]);
+  }, [visible, initial, bankNow]);
 
   const bankPaise = parseOrZero(bank);
   const cashPaise = parseOrZero(cash);
