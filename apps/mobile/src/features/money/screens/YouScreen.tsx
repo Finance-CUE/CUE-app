@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Alert, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 import { fetchResult } from '@/features/assessment/api';
+import { guideFor } from '@/features/assessment/archetypeGuide';
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
 import { Sparkline } from '../components/Sparkline';
@@ -95,7 +96,7 @@ export function YouScreen() {
         <Sparkline points={trend.data ?? []} onPress={() => router.push('/net-worth' as Href) /* typed routes regenerate on next expo start */} />
       </View>
 
-      <Card style={{ borderLeftWidth: 4, borderLeftColor: COLORS.purple }}>
+      <Card style={{ borderLeftWidth: 4, borderLeftColor: primary ? guideFor(primary.slug).color : COLORS.purple }}>
         {result.isError ? (
           <>
             <Text style={{ fontSize: 15, color: COLORS.muted }}>Could not load your pattern</Text>
@@ -109,7 +110,21 @@ export function YouScreen() {
             <Text style={{ fontSize: 24, color: COLORS.text, fontFamily: HEADING_FONT, marginTop: 6 }}>
               {primary.name}
             </Text>
+            {result.data?.secondary ? (
+              <Text style={{ fontSize: 14, color: COLORS.text, marginTop: 4 }}>
+                with {result.data.secondary.name} and {result.data.tertiary.name} in the mix
+              </Text>
+            ) : null}
             {taken ? <Text style={{ fontSize: 13, color: COLORS.muted, marginTop: 6 }}>{taken}</Text> : null}
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => router.push('/profile' as Href)}
+              hitSlop={8}
+              style={{ paddingTop: 12 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: guideFor(primary.slug).color }}>
+                See your full profile ›
+              </Text>
+            </TouchableOpacity>
           </>
         ) : result.data === null ? (
           <Text style={{ fontSize: 15, color: COLORS.muted }}>Take the assessment to see your pattern</Text>
