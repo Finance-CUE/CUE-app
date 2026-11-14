@@ -367,3 +367,48 @@ def test_add_subscription_409_is_a_conflict_and_logs_no_body(caplog):
         _run(handler, lambda repo: repo.add_subscription(USER, data))
     assert "SECRET-NAME" not in caplog.text
     assert issubclass(MoneyConflictError, MoneyStoreError)
+
+
+def test_update_spend_filters_by_user_and_skips_subscription_payments():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=[{**SPEND_ROW, "description": "lunch"}])
+
+    from app.features.money.schemas import SpendUpdate
+
+    data = SpendUpdate(description="lunch", amount_paise=100, category="food", spent_on="2026-10-20")
+    result = _run(handler, lambda repo: repo.update_spend(USER, ROW_ID, data))
+
+    req = seen[-1]
+    assert req.method == "PATCH"
+    assert req.url.params["id"] == f"eq.{ROW_ID}"
+    assert req.url.params["user_id"] == f"eq.{USER}"
+    assert req.url.params["category"] == "neq.subscription"
+    assert "user_id" not in json.loads(req.content)
+    assert result is not None and result.description == "lunch"
+
+
+def test_update_spend_returns_none_when_nothing_matched():
+    from app.features.money.schemas import SpendUpdate
+
+    data = SpendUpdate(description="x", amount_paise=1, category="food", spent_on="2026-10-20")
+    result = _run(lambda request: httpx.Response(200, json=[]), lambda repo: repo.update_spend(USER, ROW_ID, data))
+    assert result is None
+
+
+def test_sum_spends_logged_after_filters_by_user_and_time():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=[{"id": "a", "amount_paise": 300}, {"id": "b", "amount_paise": 25}])
+
+    after = datetime(2026, 10, 1, tzinfo=UTC)
+    total = _run(handler, lambda repo: repo.sum_spends_logged_after(USER, after))
+
+    req = seen[-1]
+    assert req.url.params["user_id"] == f"eq.{USER}"
+    assert req.url.params["created_at"] == f"gt.{after.isoformat()}"
+    assert total == 325

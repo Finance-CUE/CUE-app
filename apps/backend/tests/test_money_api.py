@@ -235,6 +235,7 @@ def test_every_money_route_requires_a_token():
             c.get(f"{BASE}/spends", params={"start": "2026-10-01", "end": "2026-10-31"}),
             c.post(f"{BASE}/spends", json=SPEND),
             c.delete(f"{BASE}/spends/{some}"),
+            c.patch(f"{BASE}/spends/{some}", json={}),
             c.put(f"{BASE}/starting-money", json={"bank_paise": 0, "cash_paise": 0}),
             c.get(f"{BASE}/khata"),
             c.post(f"{BASE}/khata", json={}),
@@ -291,6 +292,11 @@ def test_user_b_cannot_delete_or_settle_user_a_rows():
         ).json()["id"]
     with _client(repo, USER_B) as c:
         assert c.delete(f"{BASE}/spends/{spend_id}").status_code == 404
+        edit = {"description": "X", "amount_paise": 1, "category": "food", "spent_on": "2026-10-20"}
+        assert c.patch(f"{BASE}/spends/{spend_id}", json=edit).status_code == 404
+        # B's balance never includes A's spends.
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 100, "cash_paise": 0})
+        assert c.get(f"{BASE}/summary").json()["net_worth_paise"] == 100
         assert c.post(f"{BASE}/khata/{khata_id}/settle").status_code == 404
         assert c.delete(f"{BASE}/khata/{khata_id}").status_code == 404
     assert len(repo.spends[USER_A]) == 1
