@@ -22,7 +22,9 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const [note, setNote] = useState('');
   const [contactsNote, setContactsNote] = useState<string | null>(null);
   const mutation = useAddKhata();
-  const balance = useSummary(visible).data?.balance_paise ?? null;
+  const summary = useSummary(visible).data;
+  const balance = summary?.balance_paise ?? null;
+  const owedAlready = summary?.you_owe_paise ?? 0;
   const { run, error } = useGuardedSubmit(visible);
 
   const paise = parseRupeesToPaise(amount);
@@ -49,13 +51,15 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
 
   const submit = () => {
     if (!valid || paise === null) return;
-    if (direction === 'lent' && balance !== null && paise > balance) {
+    // Owing more in total than you hold is worth a second look; lending isn't.
+    const owedTotal = owedAlready + paise;
+    if (direction === 'borrowed' && balance !== null && owedTotal > balance) {
       Alert.alert(
-        'This seems to be more than your current balance',
-        `You're lending ${formatRupees(paise)} but your balance is ${formatRupees(balance)}. Is the amount correct, or is this something else?`,
+        'Amount exceeds your balance',
+        `Including this entry, the total you owe would be ${formatRupees(owedTotal)}, which is more than your current balance of ${formatRupees(balance)}. Please confirm the amount is correct before saving.`,
         [
           { text: 'Edit amount', style: 'cancel' },
-          { text: 'Save anyway', onPress: save },
+          { text: 'Confirm and save', onPress: save },
         ],
       );
       return;

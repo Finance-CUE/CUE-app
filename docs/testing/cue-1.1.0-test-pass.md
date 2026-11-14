@@ -47,7 +47,7 @@ Khata (lend / borrow)
 22. Add an I borrowed entry for someone else: it appears under Money borrowed.
 23. Tap Pick from contacts: Android asks for contacts permission once. Saying Deny doesn't crash anything; you can still type the name.
 24. Adding a Khata entry does not change Net worth: it is only a record.
-25. Lend more than your current balance: CUE asks "This seems to be more than your current balance". Edit amount takes you back; Save anyway saves it.
+25. Add an I borrowed entry that takes what you owe in total above your current balance: CUE shows "Amount exceeds your balance". Edit amount takes you back; Confirm and save saves it. Lending any amount never asks.
 26. Open someone who owes you and tap Mark received: the entry leaves the list and your Net worth goes up by that amount.
 27. Open someone you owe and tap Mark paid back: CUE asks Cash or UPI. Pick one: Net worth goes down by that amount and Today shows "Paid back to [name] via UPI" (or "in cash").
 
