@@ -144,7 +144,13 @@ async def summary(request: Request, user_id: UserId, repo: Repo) -> MoneySummary
     open_khata = await repo.list_open_khata(user_id)
     lent = sum(k.amount_paise for k in open_khata if k.direction == "lent")
     borrowed = sum(k.amount_paise for k in open_khata if k.direction == "borrowed")
-    since = await repo.sum_spends_logged_after(user_id, starting.set_at) if starting else 0
+    since = 0
+    if starting:
+        # Balances saved before set_at was restamped on update still left a history
+        # row; the newest of the two is when the typed balance was last true.
+        history = await repo.list_balance_history(user_id)
+        anchor = max([starting.set_at, *(h.recorded_at for h in history)])
+        since = await repo.sum_spends_logged_after(user_id, anchor)
     return MoneySummary(
         net_worth_paise=net_worth(starting, lent, borrowed, since),
         starting_money=starting,

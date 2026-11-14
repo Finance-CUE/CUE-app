@@ -329,6 +329,19 @@ def test_net_worth_takes_off_spends_logged_after_the_balance_was_set():
     assert after["spent_since_update_paise"] == 0
 
 
+def test_net_worth_measures_from_the_latest_balance_snapshot_for_older_rows():
+    # Rows saved before set_at was restamped: set_at is old, history has the update.
+    repo = FakeRepo()
+    with _client(repo) as c:
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
+        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 300})
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 700, "cash_paise": 0})
+        old = repo.starting[USER_A]
+        repo.starting[USER_A] = old.model_copy(update={"set_at": old.set_at - timedelta(days=30)})
+        s = c.get(f"{BASE}/summary").json()
+    assert s["net_worth_paise"] == 700 and s["spent_since_update_paise"] == 0
+
+
 def test_edit_spend_changes_fields_and_refuses_subscription_payments():
     repo = FakeRepo()
     with _client(repo) as c:
