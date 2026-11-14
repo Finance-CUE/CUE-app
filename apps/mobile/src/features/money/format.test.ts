@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { formatRupees, parseRupeesToPaise } from './format.ts';
+import { formatRupees, paiseToInput, parseRupeesToPaise } from './format.ts';
 
 test('parseRupeesToPaise accepts up to 2 decimals', () => {
   assert.equal(parseRupeesToPaise('54.34'), 5434);
@@ -20,4 +20,11 @@ test('formatRupees always shows 2 decimals with Indian grouping', () => {
   assert.equal(formatRupees(12050), '₹120.50');
   assert.equal(formatRupees(0), '₹0.00');
   assert.equal(formatRupees(-50000), '−₹500.00');
+});
+
+test('paiseToInput round-trips with parseRupeesToPaise', () => {
+  for (const p of [15000, 12050, 5, 100, 0]) {
+    assert.equal(parseRupeesToPaise(paiseToInput(p)), p);
+  }
+  assert.equal(paiseToInput(15000), '150');
 });

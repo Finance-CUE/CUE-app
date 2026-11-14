@@ -9,6 +9,7 @@ import { toISODate } from '../dates';
 import { countPoints } from '../chart';
 import { formatRupees } from '../format';
 import { useSummary, useToday, useTrend } from '../hooks';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 function Dot({ color, label }: { color: string; label: string }) {
   return (
@@ -28,6 +29,7 @@ export function NetWorthScreen() {
 }
 
 function NetWorthBody() {
+  const theme = useArchetypeTheme();
   const router = useRouter();
   const summary = useSummary();
   const trend = useTrend(toISODate(useToday()));
@@ -35,7 +37,7 @@ function NetWorthBody() {
   const s = summary.data;
   const start = s?.starting_money;
   const points = trend.data ?? [];
-  const hasBalance = countPoints(points.map((p) => p.balance_paise)) > 1;
+  const known = countPoints(points.map((p) => p.balance_paise));
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -46,7 +48,7 @@ function NetWorthBody() {
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/today'))}
             hitSlop={8}
             style={{ alignSelf: 'flex-start' }}>
-            <Text style={{ fontSize: 16, color: COLORS.purple, fontWeight: '600' }}>Back</Text>
+            <Text style={{ fontSize: 16, color: theme.accentText, fontWeight: '600' }}>Back</Text>
           </TouchableOpacity>
           <View>
             <Text style={{ fontSize: 14, color: COLORS.muted }}>Net worth</Text>
@@ -59,16 +61,38 @@ function NetWorthBody() {
             <EmptyCard text="Could not load your balances." />
           ) : summary.isLoading ? (
             <Card>
-              <ActivityIndicator color={COLORS.purple} />
+              <ActivityIndicator color={theme.accent} />
             </Card>
           ) : (
             <Card>
               <Row title="Bank" amount={start ? formatRupees(start.bank_paise) : '—'} />
               <Row title="Cash" amount={start ? formatRupees(start.cash_paise) : '—'} />
-              <Row title="Money lent" amount={formatRupees(s?.owed_to_you_paise ?? 0)} />
-              <Row title="Money borrowed" amount={formatRupees(s?.you_owe_paise ?? 0)} />
+              {s && s.received_since_update_paise > 0 ? (
+                <Row
+                  title="Received back"
+                  subtitle="Khata money paid back to you since your last update"
+                  amount={formatRupees(s.received_since_update_paise)}
+                />
+              ) : null}
+              {s && s.spent_since_update_paise > 0 ? (
+                <Row
+                  title="Spent since last update"
+                  subtitle="Logged after you last set your balance"
+                  amount={formatRupees(-s.spent_since_update_paise)}
+                />
+              ) : null}
             </Card>
           )}
+
+          {s && (s.owed_to_you_paise > 0 || s.you_owe_paise > 0) ? (
+            <Card>
+              <Text style={{ fontSize: 13, color: COLORS.muted, marginBottom: 4 }}>
+                Khata is a record. These count once you mark them settled.
+              </Text>
+              <Row title="Owed to you" amount={formatRupees(s.owed_to_you_paise)} />
+              <Row title="You owe" amount={formatRupees(s.you_owe_paise)} />
+            </Card>
+          ) : null}
 
           <Card>
             <Text style={{ fontSize: 16, color: COLORS.text, fontFamily: HEADING_FONT, marginBottom: 12 }}>
@@ -77,16 +101,21 @@ function NetWorthBody() {
             {trend.isError ? (
               <Text style={{ color: COLORS.muted, fontSize: 14 }}>Could not load the trend.</Text>
             ) : trend.isLoading ? (
-              <ActivityIndicator color={COLORS.purple} />
-            ) : !hasBalance ? (
+              <ActivityIndicator color={theme.accent} />
+            ) : known === 0 ? (
               <Text style={{ color: COLORS.muted, fontSize: 14 }}>
                 Set your balance to see how it moves over time.
               </Text>
             ) : (
               <>
                 <Sparkline points={points} width={280} height={120} />
+                {known === 1 ? (
+                  <Text style={{ color: COLORS.muted, fontSize: 13, marginTop: 8 }}>
+                    Your line starts today. It moves as you log spends and update your balance.
+                  </Text>
+                ) : null}
                 <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
-                  <Dot color={COLORS.purple} label="Balance" />
+                  <Dot color={theme.accent} label="Balance" />
                   <Dot color={COLORS.peach} label="Spending" />
                 </View>
               </>

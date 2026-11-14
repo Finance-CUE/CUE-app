@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Text, TouchableOpacity } from 'react-native';
 
 import { COLORS } from '@/features/assessment/theme';
+import { SecondaryButton } from '../components/ui';
 import { FormError, Sheet, useGuardedSubmit } from './Sheet';
 
 export function EntryDetailSheet({
@@ -10,12 +11,15 @@ export function EntryDetailSheet({
   title,
   lines,
   onDelete,
+  onEdit,
 }: {
   visible: boolean;
   onClose: () => void;
   title: string;
   lines: string[];
   onDelete: () => Promise<void>;
+  /** When set, an Edit button closes this sheet and calls it. */
+  onEdit?: () => void;
 }) {
   const { run, error } = useGuardedSubmit(visible, "We couldn't delete this entry. Please try again.");
   const [busy, setBusy] = useState(false);
@@ -33,6 +37,7 @@ export function EntryDetailSheet({
         </Text>
       ))}
       <FormError message={error} />
+      {onEdit ? <SecondaryButton label="Edit" onPress={onEdit} /> : null}
       <TouchableOpacity
         accessibilityRole="button"
         disabled={busy}

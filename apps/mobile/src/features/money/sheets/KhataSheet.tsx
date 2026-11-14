@@ -1,12 +1,12 @@
 import { Contact, requestPermissionsAsync } from 'expo-contacts';
 import { useState } from 'react';
-import { Platform, Text } from 'react-native';
+import { Alert, Platform, Text } from 'react-native';
 
 import { COLORS } from '@/features/assessment/theme';
 
 import { ChipRow, PrimaryButton, SecondaryButton, TextField } from '@/features/money/components/ui';
-import { parseRupeesToPaise } from '@/features/money/format';
-import { useAddKhata } from '@/features/money/hooks';
+import { formatRupees, parseRupeesToPaise } from '@/features/money/format';
+import { useAddKhata, useSummary } from '@/features/money/hooks';
 import type { Direction } from '@/features/money/types';
 import { FormError, Sheet, useGuardedSubmit } from './Sheet';
 
@@ -22,6 +22,9 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const [note, setNote] = useState('');
   const [contactsNote, setContactsNote] = useState<string | null>(null);
   const mutation = useAddKhata();
+  const summary = useSummary(visible).data;
+  const balance = summary?.balance_paise ?? null;
+  const owedAlready = summary?.you_owe_paise ?? 0;
   const { run, error } = useGuardedSubmit(visible);
 
   const paise = parseRupeesToPaise(amount);
@@ -47,6 +50,24 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
   };
 
   const submit = () => {
+    if (!valid || paise === null) return;
+    // Owing more in total than you hold is worth a second look; lending isn't.
+    const owedTotal = owedAlready + paise;
+    if (direction === 'borrowed' && balance !== null && owedTotal > balance) {
+      Alert.alert(
+        'Amount exceeds your balance',
+        `Including this entry, the total you owe would be ${formatRupees(owedTotal)}, which is more than your current balance of ${formatRupees(balance)}. Please confirm the amount is correct before saving.`,
+        [
+          { text: 'Edit amount', style: 'cancel' },
+          { text: 'Confirm and save', onPress: save },
+        ],
+      );
+      return;
+    }
+    save();
+  };
+
+  const save = () => {
     if (!valid || paise === null) return;
     void run(
       () => mutation.mutateAsync({ direction, person: name, amount_paise: paise, note: note.trim() || null }),

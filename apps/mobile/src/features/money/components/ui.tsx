@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
 import { PlusIcon } from './icons';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 export function ScreenScroll({
   children,
@@ -43,7 +44,7 @@ export function ScreenHeader({
   eyebrow,
   title,
   avatarLetter,
-  avatarColor = COLORS.purple,
+  avatarColor,
   avatarUri,
   onAvatarPress,
   avatarName,
@@ -56,12 +57,14 @@ export function ScreenHeader({
   onAvatarPress?: () => void;
   avatarName?: string;
 }) {
+  const theme = useArchetypeTheme();
+  const avatarFill = avatarColor ?? theme.accent;
   const avatarStyle: ViewStyle = {
     width: 44,
     height: 44,
     borderRadius: 22,
     overflow: 'hidden',
-    backgroundColor: avatarColor,
+    backgroundColor: avatarFill,
     alignItems: 'center',
     justifyContent: 'center',
   };
@@ -120,7 +123,7 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
     <View
       style={[
         {
-          backgroundColor: COLORS.white,
+          backgroundColor: COLORS.card,
           borderColor: COLORS.cardBorder,
           borderWidth: 1,
           borderRadius: 18,
@@ -282,6 +285,7 @@ export function ChipRow<T extends string>({
   value: T | null;
   onChange: (value: T) => void;
 }) {
+  const theme = useArchetypeTheme();
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
       {options.map((o) => {
@@ -298,8 +302,8 @@ export function ChipRow<T extends string>({
               paddingHorizontal: 14,
               borderRadius: 18,
               borderWidth: 1,
-              borderColor: active ? COLORS.purple : COLORS.border,
-              backgroundColor: active ? COLORS.purpleSoft : COLORS.white,
+              borderColor: active ? theme.accent : COLORS.border,
+              backgroundColor: active ? theme.tint : COLORS.card,
             }}>
             <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: active ? '600' : '400' }}>{o.label}</Text>
           </TouchableOpacity>
@@ -316,6 +320,7 @@ export function Fab({
   onPress: () => void;
   accessibilityLabel?: string;
 }) {
+  const theme = useArchetypeTheme();
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -329,7 +334,7 @@ export function Fab({
         width: 56,
         height: 56,
         borderRadius: 28,
-        backgroundColor: COLORS.text,
+        backgroundColor: theme.deep,
         alignItems: 'center',
         justifyContent: 'center',
       }}>
