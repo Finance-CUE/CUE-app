@@ -1,7 +1,7 @@
 /**
  * Runtime configuration for the app bundle.
  *
- * The ONLY value the app is allowed to know is where our backend lives.
+ * The app knows where our backend lives, plus the public Google client ID.
  * Supabase URLs and keys never appear here, in app.json, or anywhere else on
  * the client - anything bundled into an APK is readable by anyone who
  * downloads it. All Supabase access goes through the backend.
@@ -35,3 +35,9 @@ function resolveApiBaseUrl(): string {
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
+
+/**
+ * Google OAuth "Web application" client ID. Public by design - it identifies
+ * the app to Google and is not a secret. Empty means Google sign-in is off.
+ */
+export const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() ?? '';

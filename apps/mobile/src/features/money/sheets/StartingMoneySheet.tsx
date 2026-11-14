@@ -49,8 +49,8 @@ export function StartingMoneySheet({
     <Sheet
       visible={visible}
       onClose={onClose}
-      title="Set up your starting money"
-      subtitle="What do you already have? Leave either at ₹0.">
+      title="Update balance"
+      subtitle="What do you have right now? Leave either at ₹0.00.">
       <TextField label="Bank" value={bank} onChangeText={setBank} prefix="₹" placeholder="0" keyboardType="decimal-pad" />
       <TextField label="Cash" value={cash} onChangeText={setCash} prefix="₹" placeholder="0" keyboardType="decimal-pad" />
       <View
@@ -61,7 +61,7 @@ export function StartingMoneySheet({
           borderTopWidth: 1,
           borderTopColor: COLORS.cardBorder,
         }}>
-        <Text style={{ fontSize: 15, color: COLORS.muted }}>Total starting money</Text>
+        <Text style={{ fontSize: 15, color: COLORS.muted }}>Total balance</Text>
         <Text style={{ fontSize: 15, fontWeight: '600', color: COLORS.text }}>{formatRupees(total)}</Text>
       </View>
       <FormError message={error} />

@@ -14,6 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
 from app.core.config import Settings, get_settings
+from app.features.auth.profiles import ProfileStore
 from app.features.auth.service import SupabaseAuthClient
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ _bearer = HTTPBearer(auto_error=False)
 
 _UNAUTHORISED = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Not authenticated.",
+    detail="Your session has ended. Please log in again.",
     headers={"WWW-Authenticate": "Bearer"},
 )
 
@@ -34,6 +35,10 @@ _CLOCK_SKEW_SECONDS = 30
 
 def get_auth_client(request: Request) -> SupabaseAuthClient:
     return request.app.state.auth_client
+
+
+def get_profile_store(request: Request) -> ProfileStore:
+    return request.app.state.profile_store
 
 
 def get_jwk_client(request: Request) -> PyJWKClient:
@@ -73,3 +78,4 @@ def get_current_claims(
 
 CurrentClaims = Annotated[dict[str, Any], Depends(get_current_claims)]
 AuthClient = Annotated[SupabaseAuthClient, Depends(get_auth_client)]
+Profiles = Annotated[ProfileStore, Depends(get_profile_store)]

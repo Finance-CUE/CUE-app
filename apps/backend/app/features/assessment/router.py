@@ -38,7 +38,7 @@ def current_user_id(claims: CurrentClaims) -> str:
     except (KeyError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated.",
+            detail="Your session has ended. Please log in again.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
