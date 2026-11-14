@@ -16,6 +16,9 @@ export const COLORS = {
   cardDarkText: '#D9D4DE',
   cardBorder: '#ECE7EB',
   error: '#C65F68',
+  sageTint: '#EAF0E7',
+  peachTint: '#FBEDE7',
+  linkOnDark: '#B9AFE6',
 } as const;
 
-export const HEADING_FONT = Platform.OS === 'ios' ? 'Georgia' : undefined;
+export const HEADING_FONT = Platform.select({ ios: 'Georgia', android: 'serif', default: undefined });

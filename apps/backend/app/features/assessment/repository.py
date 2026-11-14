@@ -114,6 +114,8 @@ class AssessmentRepository:
             "similarities": {slug: round(value, 6) for slug, value in score.ranking},
             "scoring_version": score.version,
         }
+        if score.computed_at is not None:
+            row["computed_at"] = score.computed_at.isoformat()
         await self._request("POST", "assessment_results", json=row, prefer="return=minimal")
         await self._request(
             "PATCH",
@@ -134,7 +136,9 @@ class AssessmentRepository:
             "assessment_results",
             params={
                 "user_id": f"eq.{_uid(user_id)}",
-                "select": ",".join((*DIMENSIONS, *_RANK_COLUMNS, "similarities", "scoring_version")),
+                "select": ",".join(
+                    (*DIMENSIONS, *_RANK_COLUMNS, "similarities", "scoring_version", "computed_at")
+                ),
                 "order": "computed_at.desc",
                 "limit": "1",
             },
@@ -152,4 +156,7 @@ class AssessmentRepository:
             dimensions={dimension: float(row[dimension]) for dimension in DIMENSIONS},
             ranking=ranking,
             version=row["scoring_version"],
+            computed_at=(
+                datetime.fromisoformat(row["computed_at"]) if row.get("computed_at") else None
+            ),
         )

@@ -5,6 +5,8 @@ Run: cd apps/backend && python -m pytest tests/test_assessment_repository.py -v
 
 import asyncio
 import json
+from dataclasses import replace
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -92,7 +94,10 @@ def test_save_result_writes_the_result_then_the_profile():
         seen.append(request)
         return httpx.Response(201)
 
-    score = score_assessment({question_id: 3 for question_id in range(1, 19)})
+    score = replace(
+        score_assessment({question_id: 3 for question_id in range(1, 19)}),
+        computed_at=datetime(2026, 10, 24, 8, tzinfo=UTC),
+    )
     _run(handler, lambda repo: repo.save_result(USER, score, "peace"))
 
     result_request, profile_request = seen
@@ -105,6 +110,7 @@ def test_save_result_writes_the_result_then_the_profile():
     assert row["tertiary_archetype"] == score.tertiary
     assert row["scoring_version"] == score.version
     assert set(DIMENSIONS) <= set(row)
+    assert row["computed_at"] == score.computed_at.isoformat()
     assert set(row["similarities"]) == {slug for slug, _ in score.ranking}
 
     assert profile_request.method == "PATCH"
@@ -145,3 +151,28 @@ def test_get_latest_result_rebuilds_the_score_and_returns_none_when_empty():
     assert seen[0].url.params["limit"] == "1"
 
     assert _run(lambda request: httpx.Response(200, json=[]), lambda r: r.get_latest_result(USER)) is None
+
+
+def test_latest_result_includes_computed_at():
+    from datetime import datetime
+
+    score = score_assessment({question_id: 4 for question_id in range(1, 19)})
+    row = {
+        **{dimension: score.dimensions[dimension] for dimension in DIMENSIONS},
+        "primary_archetype": score.primary,
+        "secondary_archetype": score.secondary,
+        "tertiary_archetype": score.tertiary,
+        "similarities": {slug: similarity for slug, similarity in score.ranking},
+        "scoring_version": score.version,
+        "computed_at": "2026-10-12T10:00:00+00:00",
+    }
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=[row])
+
+    rebuilt = _run(handler, lambda repo: repo.get_latest_result(USER))
+
+    assert rebuilt.computed_at == datetime.fromisoformat("2026-10-12T10:00:00+00:00")
+    assert "computed_at" in seen[0].url.params["select"].split(",")

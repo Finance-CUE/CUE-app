@@ -5,6 +5,8 @@ router's limiter (per client IP, in process memory).
 """
 
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
@@ -83,6 +85,7 @@ async def complete(
             detail="Answer all questions before finishing.",
         ) from exc
 
+    score = replace(score, computed_at=datetime.now(UTC))
     await repo.save_result(user_id, score, payload.money_why)
     return to_response(score)
 

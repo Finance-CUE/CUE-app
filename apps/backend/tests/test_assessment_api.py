@@ -179,6 +179,14 @@ def test_result_is_404_until_complete_then_matches():
         assert client.get(f"{BASE}/result").json() == completed
 
 
+def test_result_response_has_computed_at():
+    repo = FakeRepo()
+    with _client(repo) as client:
+        _answer_all(client, 5)
+        assert client.post(f"{BASE}/complete", json={"money_why": "control"}).json()["computed_at"]
+        assert client.get(f"{BASE}/result").json()["computed_at"]
+
+
 def test_one_user_never_sees_another_users_data():
     repo = FakeRepo()
     with _client(repo, USER_A) as client:

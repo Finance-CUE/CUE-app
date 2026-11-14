@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -9,6 +11,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,6 +39,86 @@ const COLORS = {
   error: '#C65F68',
   errorBackground: '#FFF5F5',
 };
+
+const ACCENT_WORDS = ['understood.', 'simplified.', 'clarified.', 'balanced.', 'mastered.'];
+const WORD_HOLD_MS = 2400;
+const WORD_FADE_MS = 350;
+
+// Content has 24px side padding, so the hero is the window minus 48.
+const HERO_SIDE_PADDING = 24;
+
+const HERO_GRADIENT = ['#8D80CC', '#B695C8', '#E6A07E', '#B695C8'] as const;
+
+// One period of the palette is `heroWidth` wide; two are laid side by side and
+// slid left by exactly one period, so the loop restarts without a seam.
+function AnimatedHeroGradient() {
+  const { width } = useWindowDimensions();
+  const heroWidth = width - HERO_SIDE_PADDING * 2;
+  const shift = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(shift, {
+        toValue: -heroWidth,
+        duration: 9000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+
+    return () => loop.stop();
+  }, [shift, heroWidth]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.heroGradient,
+        { width: heroWidth * 2, transform: [{ translateX: shift }] },
+      ]}
+    >
+      <LinearGradient
+        colors={[...HERO_GRADIENT, ...HERO_GRADIENT, HERO_GRADIENT[0]]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
+}
+
+function RotatingAccentWord() {
+  const [index, setIndex] = useState(0);
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const fade = (toValue: number, onDone?: () => void) =>
+      Animated.timing(opacity, {
+        toValue,
+        duration: WORD_FADE_MS,
+        useNativeDriver: true,
+      }).start(({ finished }) => finished && onDone?.());
+
+    const timer = setInterval(() => {
+      fade(0, () => {
+        setIndex((current) => (current + 1) % ACCENT_WORDS.length);
+        fade(1);
+      });
+    }, WORD_HOLD_MS + WORD_FADE_MS * 2);
+
+    return () => {
+      clearInterval(timer);
+      opacity.stopAnimation();
+    };
+  }, [opacity]);
+
+  return (
+    <Animated.Text style={[styles.title, styles.titleAccent, { opacity }]}>
+      {ACCENT_WORDS[index]}
+    </Animated.Text>
+  );
+}
 
 export function WelcomeLogin({
   onContinue,
@@ -138,23 +221,22 @@ export function WelcomeLogin({
               HERO
           ───────────────────────────────────── */}
 
-          <LinearGradient
-            colors={['#8D80CC', '#B695C8', '#E6A07E']}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={styles.hero}
-          >
+          <View style={styles.hero}>
+            <AnimatedHeroGradient />
+
             <View style={styles.orbitLarge} />
             <View style={styles.orbitSmall} />
 
             <View style={styles.clock}>
               <View style={styles.minuteHand} />
-              <View style={styles.hourHand} />
+              <View style={styles.hourHandPivot}>
+                <View style={styles.hourHand} />
+              </View>
             </View>
 
             <View style={styles.dotOne} />
             <View style={styles.dotTwo} />
-          </LinearGradient>
+          </View>
 
           {/* ─────────────────────────────────────
               INTRO
@@ -165,12 +247,15 @@ export function WelcomeLogin({
               WELCOME
             </Text>
 
-            <Text style={styles.title}>
-              Money,{' '}
-              <Text style={styles.titleAccent}>
-                understood.
-              </Text>
-            </Text>
+            <View
+              style={styles.titleRow}
+              accessible
+              accessibilityRole="header"
+              accessibilityLabel="Money, understood."
+            >
+              <Text style={styles.title}>Money, </Text>
+              <RotatingAccentWord />
+            </View>
 
             <Text style={styles.description}>
               A gentle space to track patterns, understand your habits, and
@@ -369,6 +454,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    backgroundColor: '#8D80CC',
+  },
+
+  heroGradient: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
   },
 
   orbitLarge: {
@@ -393,14 +486,15 @@ const styles = StyleSheet.create({
     left: 30,
   },
 
+  // 58px outer - 2 * 2px border = 54px inner, so the pivot is (27, 27).
+  // Hands are 2px wide at left 26 (centre x = 27) and run from the pivot
+  // outward; the hour hand is rotated about the pivot via a full-size wrapper.
   clock: {
     width: 58,
     height: 58,
     borderRadius: 29,
     borderWidth: 2,
     borderColor: COLORS.white,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   minuteHand: {
@@ -408,9 +502,18 @@ const styles = StyleSheet.create({
     width: 2,
     height: 19,
     backgroundColor: COLORS.white,
-    borderRadius: 2,
-    top: 10,
-    left: 27,
+    borderRadius: 1,
+    top: 8,
+    left: 26,
+  },
+
+  hourHandPivot: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 54,
+    height: 54,
+    transform: [{ rotate: '135deg' }],
   },
 
   hourHand: {
@@ -418,10 +521,9 @@ const styles = StyleSheet.create({
     width: 2,
     height: 15,
     backgroundColor: COLORS.white,
-    borderRadius: 2,
-    top: 27,
-    left: 27,
-    transform: [{ rotate: '135deg' }],
+    borderRadius: 1,
+    top: 12,
+    left: 26,
   },
 
   dotOne: {
@@ -457,6 +559,13 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     color: COLORS.mutedLight,
     marginBottom: 9,
+  },
+
+  titleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    justifyContent: 'center',
   },
 
   title: {

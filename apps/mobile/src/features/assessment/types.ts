@@ -18,4 +18,5 @@ export interface AssessmentResult {
   secondary: ArchetypeCard;
   tertiary: ArchetypeCard;
   scoring_version: string;
+  computed_at: string | null;
 }

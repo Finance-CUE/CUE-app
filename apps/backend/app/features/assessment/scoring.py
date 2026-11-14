@@ -7,6 +7,7 @@ Q19 (Money Why) never enters this module.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from math import floor, sqrt
 
 from app.features.assessment.archetypes import ARCHETYPES, DIMENSIONS
@@ -90,6 +91,7 @@ class AssessmentScore:
     dimensions: dict[str, float]
     ranking: tuple[tuple[str, float], ...]
     version: str = SCORING_VERSION
+    computed_at: datetime | None = None
 
     @property
     def primary(self) -> str:
