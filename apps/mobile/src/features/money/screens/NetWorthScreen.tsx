@@ -9,6 +9,7 @@ import { toISODate } from '../dates';
 import { countPoints } from '../chart';
 import { formatRupees } from '../format';
 import { useSummary, useToday, useTrend } from '../hooks';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 function Dot({ color, label }: { color: string; label: string }) {
   return (
@@ -28,6 +29,7 @@ export function NetWorthScreen() {
 }
 
 function NetWorthBody() {
+  const theme = useArchetypeTheme();
   const router = useRouter();
   const summary = useSummary();
   const trend = useTrend(toISODate(useToday()));
@@ -46,7 +48,7 @@ function NetWorthBody() {
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/today'))}
             hitSlop={8}
             style={{ alignSelf: 'flex-start' }}>
-            <Text style={{ fontSize: 16, color: COLORS.purple, fontWeight: '600' }}>Back</Text>
+            <Text style={{ fontSize: 16, color: theme.accentText, fontWeight: '600' }}>Back</Text>
           </TouchableOpacity>
           <View>
             <Text style={{ fontSize: 14, color: COLORS.muted }}>Net worth</Text>
@@ -59,7 +61,7 @@ function NetWorthBody() {
             <EmptyCard text="Could not load your balances." />
           ) : summary.isLoading ? (
             <Card>
-              <ActivityIndicator color={COLORS.purple} />
+              <ActivityIndicator color={theme.accent} />
             </Card>
           ) : (
             <Card>
@@ -84,7 +86,7 @@ function NetWorthBody() {
             {trend.isError ? (
               <Text style={{ color: COLORS.muted, fontSize: 14 }}>Could not load the trend.</Text>
             ) : trend.isLoading ? (
-              <ActivityIndicator color={COLORS.purple} />
+              <ActivityIndicator color={theme.accent} />
             ) : known === 0 ? (
               <Text style={{ color: COLORS.muted, fontSize: 14 }}>
                 Set your balance to see how it moves over time.
@@ -98,7 +100,7 @@ function NetWorthBody() {
                   </Text>
                 ) : null}
                 <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
-                  <Dot color={COLORS.purple} label="Balance" />
+                  <Dot color={theme.accent} label="Balance" />
                   <Dot color={COLORS.peach} label="Spending" />
                 </View>
               </>

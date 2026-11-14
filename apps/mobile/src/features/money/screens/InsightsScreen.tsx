@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { CategoryIcon } from '../components/icons';
 import { Card, EmptyCard, Row, ScreenHeader, ScreenScroll, SectionHeader, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
@@ -10,6 +10,7 @@ import { monthRange, toISODate, weekDays } from '../dates';
 import { formatRupees } from '../format';
 import { useSpends } from '../hooks';
 import type { Category } from '../types';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const BAR_AREA = 96;
@@ -19,6 +20,7 @@ const Total = ({ paise }: { paise: number }) => (
 );
 
 export function InsightsScreen() {
+  const theme = useArchetypeTheme();
   const queryClient = useQueryClient();
   const avatar = useProfileAvatar();
   const [refreshing, setRefreshing] = useState(false);
@@ -62,14 +64,17 @@ export function InsightsScreen() {
     <ScreenScroll refreshing={refreshing} onRefresh={refresh}>
       <ScreenHeader eyebrow={eyebrow} title="Insights" {...avatar} />
 
-      <Card style={{ backgroundColor: COLORS.purpleSoft, borderColor: COLORS.purpleSoft, borderRadius: 22 }}>
-        <Text style={{ fontSize: 14, color: COLORS.text }}>CUE will start noticing patterns as you use it.</Text>
+      <Card style={{ backgroundColor: theme.tint, borderColor: theme.tint, borderRadius: 22, gap: 8 }}>
+        <Text style={{ fontSize: 16, lineHeight: 23, color: COLORS.text, fontFamily: HEADING_FONT, fontStyle: 'italic' }}>
+          {theme.belief}
+        </Text>
+        <Text style={{ fontSize: 13, color: COLORS.muted }}>CUE will start noticing patterns as you use it.</Text>
       </Card>
 
       <SectionHeader title="Spend by day" right={ready ? <Total paise={weekTotal} /> : undefined} />
       <Card>
         {spends.isLoading ? (
-          <ActivityIndicator color={COLORS.purple} />
+          <ActivityIndicator color={theme.accent} />
         ) : spends.isError ? (
           <Text style={{ color: COLORS.muted, fontSize: 14 }}>Could not load. Pull to refresh.</Text>
         ) : (
@@ -82,7 +87,7 @@ export function InsightsScreen() {
                       width: 18,
                       borderRadius: 9,
                       height: t > 0 && maxDay > 0 ? Math.max(4, (t / maxDay) * BAR_AREA) : 4,
-                      backgroundColor: t > 0 ? COLORS.purple : COLORS.track,
+                      backgroundColor: t > 0 ? theme.accent : COLORS.track,
                     }}
                   />
                 </View>
@@ -108,7 +113,7 @@ export function InsightsScreen() {
                     width: 40,
                     height: 40,
                     borderRadius: 20,
-                    backgroundColor: COLORS.purpleSoft,
+                    backgroundColor: theme.tint,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>

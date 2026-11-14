@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { Alert, AppState, Linking, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 import { fetchResult } from '@/features/assessment/api';
-import { guideFor } from '@/features/assessment/archetypeGuide';
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
 import { Sparkline } from '../components/Sparkline';
@@ -16,6 +15,7 @@ import { useNudgePlan, useNudges, useSaveNudges, useSpends, useToday, useTrend }
 import { notificationsBlocked } from '../notifications';
 import { weeklyReflection } from '../reflection';
 import type { Nudges, PlannedNudge } from '../types';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 const NUDGE_ROWS: { key: keyof Nudges; title: string; subtitle: string }[] = [
   { key: 'pre_spend', title: 'Pre-spend pause', subtitle: 'Before unplanned spends' },
@@ -60,6 +60,7 @@ function useNotificationsBlocked(): boolean {
 }
 
 export function YouScreen() {
+  const theme = useArchetypeTheme();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
@@ -114,12 +115,12 @@ export function YouScreen() {
         <Sparkline points={trend.data ?? []} onPress={() => router.push('/net-worth' as Href) /* typed routes regenerate on next expo start */} />
       </View>
 
-      <Card style={{ borderLeftWidth: 4, borderLeftColor: primary ? guideFor(primary.slug).color : COLORS.purple }}>
+      <Card style={{ borderLeftWidth: 4, borderLeftColor: theme.accent }}>
         {result.isError ? (
           <>
             <Text style={{ fontSize: 15, color: COLORS.muted }}>Could not load your pattern</Text>
             <TouchableOpacity accessibilityRole="button" onPress={() => result.refetch()} style={{ paddingVertical: 8 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.purple }}>Try again</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>Try again</Text>
             </TouchableOpacity>
           </>
         ) : primary ? (
@@ -139,7 +140,7 @@ export function YouScreen() {
               onPress={() => router.push('/profile' as Href)}
               hitSlop={8}
               style={{ paddingTop: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: guideFor(primary.slug).color }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>
                 See your full profile ›
               </Text>
             </TouchableOpacity>
@@ -159,7 +160,7 @@ export function YouScreen() {
               Notifications are off for CUE, so nudges and subscription reminders can't reach you.
             </Text>
             <TouchableOpacity accessibilityRole="button" onPress={() => Linking.openSettings()} hitSlop={8}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.purple }}>Open settings</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>Open settings</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -174,7 +175,7 @@ export function YouScreen() {
               disabled={!nudges.data || save.isPending}
               onValueChange={(v) => toggle(r.key, v)}
               thumbColor={COLORS.white}
-              trackColor={{ true: COLORS.purple, false: COLORS.track }}
+              trackColor={{ true: theme.accent, false: COLORS.track }}
               ios_backgroundColor={COLORS.track}
             />
           </View>

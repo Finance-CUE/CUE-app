@@ -7,6 +7,7 @@ import { ArchetypeProfile } from '@/features/assessment/components/ArchetypeProf
 import { COLORS } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
 import { EmptyCard, ScreenScroll, SecondaryButton } from '@/features/money/components/ui';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 /** The full money profile, opened from the You tab. */
 export function ProfileScreen() {
@@ -17,6 +18,7 @@ export function ProfileScreen() {
 }
 
 function ProfileBody() {
+  const theme = useArchetypeTheme();
   const router = useRouter();
   const result = useQuery({ queryKey: ['assessment', 'result'], queryFn: fetchResult });
 
@@ -29,10 +31,10 @@ function ProfileBody() {
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/you'))}
           hitSlop={8}
           style={{ alignSelf: 'flex-start' }}>
-          <Text style={{ fontSize: 16, color: COLORS.purple, fontWeight: '600' }}>Back</Text>
+          <Text style={{ fontSize: 16, color: theme.accentText, fontWeight: '600' }}>Back</Text>
         </TouchableOpacity>
         {result.isPending ? (
-          <ActivityIndicator color={COLORS.purple} />
+          <ActivityIndicator color={theme.accent} />
         ) : result.isError ? (
           <EmptyCard text="Could not load your profile. Go back and try again." />
         ) : result.data ? (

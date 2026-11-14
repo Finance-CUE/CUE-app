@@ -9,8 +9,10 @@ import { useKhata } from '../hooks';
 import { personBalances, type PersonBalance } from '../khata';
 import { KhataSheet } from '../sheets/KhataSheet';
 import { PersonSheet } from '../sheets/PersonSheet';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 export function KhataScreen() {
+  const theme = useArchetypeTheme();
   const queryClient = useQueryClient();
   const avatar = useProfileAvatar();
   const [refreshing, setRefreshing] = useState(false);
@@ -45,7 +47,7 @@ export function KhataScreen() {
         />
         {khata.isLoading ? (
           <Card>
-            <ActivityIndicator color={COLORS.purple} />
+            <ActivityIndicator color={theme.accent} />
           </Card>
         ) : khata.isError ? (
           <EmptyCard text="Could not load. Pull to refresh." />

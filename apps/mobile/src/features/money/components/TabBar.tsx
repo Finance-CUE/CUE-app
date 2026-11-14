@@ -4,6 +4,7 @@ import type { BottomTabBarProps } from 'expo-router/build/react-navigation/botto
 
 import { COLORS } from '@/features/assessment/theme';
 import { InsightsIcon, KhataIcon, TodayIcon, YouIcon } from './icons';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 const ICONS = { today: TodayIcon, insights: InsightsIcon, khata: KhataIcon, you: YouIcon };
 const LABELS = { today: 'Today', insights: 'Insights', khata: 'Khata', you: 'You' };
@@ -11,12 +12,13 @@ type TabName = keyof typeof ICONS;
 
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const theme = useArchetypeTheme();
 
   return (
     <View
       style={{
         flexDirection: 'row',
-        backgroundColor: COLORS.white,
+        backgroundColor: COLORS.card,
         borderTopWidth: 1,
         borderTopColor: COLORS.cardBorder,
         paddingTop: 8,
@@ -43,7 +45,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
               accessibilityRole="button"
               accessibilityState={{ selected: focused }}
               onPress={onPress}
-              style={[styles.pill, focused ? styles.pillActive : null]}>
+              style={[styles.pill, focused ? { backgroundColor: theme.tint } : null]}>
               <Icon color={color} />
               <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 11, fontWeight: focused ? '600' : '500', color }}>{LABELS[name]}</Text>
             </TouchableOpacity>
@@ -65,5 +67,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
   },
-  pillActive: { backgroundColor: COLORS.purpleSoft },
 });

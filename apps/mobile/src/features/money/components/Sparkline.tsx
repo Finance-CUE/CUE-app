@@ -4,6 +4,7 @@ import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { COLORS } from '@/features/assessment/theme';
 import { countPoints, linePoints } from '../chart';
 import type { TrendPoint } from '../types';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 /**
  * Balance line (purple) and spending line (peach). A single known balance (the first
@@ -20,6 +21,7 @@ export function Sparkline({
   height?: number;
   onPress?: () => void;
 }) {
+  const theme = useArchetypeTheme();
   const balances = points.map((p) => p.balance_paise);
   const known = countPoints(balances);
   const hasBalance = known > 1;
@@ -28,11 +30,11 @@ export function Sparkline({
   const chart = (
     <Svg width={width} height={height}>
       {hasBalance ? (
-        <Polyline points={balance} fill="none" stroke={COLORS.purple} strokeWidth={2} />
+        <Polyline points={balance} fill="none" stroke={theme.accent} strokeWidth={2} />
       ) : known === 1 ? (
         <>
-          <Line x1={0} y1={height / 2} x2={width - 4} y2={height / 2} stroke={COLORS.purple} strokeWidth={2} strokeDasharray="4 4" />
-          <Circle cx={width - 4} cy={height / 2} r={4} fill={COLORS.purple} />
+          <Line x1={0} y1={height / 2} x2={width - 4} y2={height / 2} stroke={theme.accent} strokeWidth={2} strokeDasharray="4 4" />
+          <Circle cx={width - 4} cy={height / 2} r={4} fill={theme.accent} />
         </>
       ) : null}
       {points.length > 1 && spending ? (

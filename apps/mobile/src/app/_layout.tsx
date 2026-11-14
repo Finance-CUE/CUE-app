@@ -19,7 +19,7 @@ import { AppProviders } from '@/providers/AppProviders';
 import { useAuthStore } from '@/features/auth/store';
 import { useAssessmentStore } from '@/features/assessment/store';
 
-const CUE_BACKGROUND = '#FAF8F6';
+const CUE_BACKGROUND = '#FAF7F2';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();

@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
@@ -18,6 +19,7 @@ import { StartingMoneySheet } from '../sheets/StartingMoneySheet';
 import { SubscriptionPromptSheet } from '../sheets/SubscriptionPromptSheet';
 import { SubscriptionSheet } from '../sheets/SubscriptionSheet';
 import type { DueCycle, Spend } from '../types';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 type SheetName = 'log' | 'khata' | 'sub' | 'start' | null;
 type Detail = { title: string; lines: string[]; onDelete: () => Promise<void>; onEdit?: () => void };
@@ -41,10 +43,14 @@ function dueLabel(n: number): string {
 
 const cycleKey = (c: DueCycle) => `${c.subscription_id}:${c.month}`;
 
-const Loading = () => <ActivityIndicator color={COLORS.purple} />;
+function Loading() {
+  const theme = useArchetypeTheme();
+  return <ActivityIndicator color={theme.accent} />;
+}
 
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
+  const theme = useArchetypeTheme();
   const queryClient = useQueryClient();
   const fullName = useAuthStore((s) => s.user?.full_name)?.trim() ?? '';
   const [sheet, setSheet] = useState<SheetName>(null);
@@ -152,7 +158,7 @@ export function TodayScreen() {
   };
 
   const tiles: { label: string; bg: string; icon: ReactNode; sheet: SheetName }[] = [
-    { label: 'Cash', bg: COLORS.purpleSoft, icon: <RupeeIcon color={COLORS.purple} />, sheet: 'log' },
+    { label: 'Cash', bg: theme.tint, icon: <RupeeIcon color={theme.accentText} />, sheet: 'log' },
     { label: 'Lend / Borrow', bg: COLORS.sageTint, icon: <SwapIcon color={COLORS.sage} />, sheet: 'khata' },
     { label: 'Subscription', bg: COLORS.peachTint, icon: <ClockIcon color={COLORS.peach} />, sheet: 'sub' },
   ];
@@ -169,33 +175,42 @@ export function TodayScreen() {
           title={first ? `Hi, ${first}` : 'Hi there'}
           {...avatar}
         />
+        {theme.slug ? (
+          <Text style={{ marginTop: -10, fontSize: 15, fontStyle: 'italic', color: theme.accentText, fontFamily: HEADING_FONT }}>
+            {theme.question}
+          </Text>
+        ) : null}
 
-        <View style={{ backgroundColor: COLORS.cardDark, borderRadius: 22, padding: 20, gap: 10 }}>
+        <LinearGradient
+          colors={theme.gradient}
+          start={{ x: 0, y: 1 }}
+          end={{ x: 1, y: 0 }}
+          style={{ borderRadius: 22, padding: 20, gap: 10 }}>
           {summary.isPending ? (
-            <ActivityIndicator color={COLORS.linkOnDark} />
+            <ActivityIndicator color={theme.linkOnDeep} />
           ) : summary.isError ? (
-            <Text style={{ color: COLORS.cardDarkText, fontSize: 14 }}>{LOAD_ERROR}</Text>
+            <Text style={{ color: theme.onDeep, fontSize: 14 }}>{LOAD_ERROR}</Text>
           ) : (
             <>
               {nw === null ? null : (
-                <Text style={{ fontSize: 11, letterSpacing: 1.5, color: COLORS.cardDarkText }}>NET WORTH</Text>
+                <Text style={{ fontSize: 11, letterSpacing: 1.5, color: theme.onDeep }}>NET WORTH</Text>
               )}
               <Text style={{ fontSize: 24, color: COLORS.white, fontFamily: HEADING_FONT }}>
                 {nw === null ? 'Add your first financial details to see your full picture.' : formatRupees(nw)}
               </Text>
               {nw !== null && spentSince > 0 ? (
-                <Text style={{ fontSize: 12, color: COLORS.cardDarkText }}>
+                <Text style={{ fontSize: 12, color: theme.onDeep }}>
                   After {formatRupees(spentSince)} spent since you last updated your balance
                 </Text>
               ) : null}
               <TouchableOpacity accessibilityRole="button" onPress={() => setSheet('start')} activeOpacity={0.7}>
-                <Text style={{ color: COLORS.linkOnDark, fontSize: 14, fontWeight: '600' }}>
+                <Text style={{ color: theme.linkOnDeep, fontSize: 14, fontWeight: '600' }}>
                   Update balance
                 </Text>
               </TouchableOpacity>
             </>
           )}
-        </View>
+        </LinearGradient>
 
         <View style={{ gap: 12 }}>
           <SectionHeader title="Quick add" />
@@ -247,7 +262,7 @@ export function TodayScreen() {
                   onPress={() => changeWeek(1)}
                   hitSlop={10}
                   style={{ paddingHorizontal: 10, paddingVertical: 2 }}>
-                  <Text style={{ fontSize: 20, color: COLORS.purple, fontWeight: '600' }}>‹</Text>
+                  <Text style={{ fontSize: 20, color: theme.accentText, fontWeight: '600' }}>‹</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -257,7 +272,7 @@ export function TodayScreen() {
                   onPress={() => changeWeek(-1)}
                   hitSlop={10}
                   style={{ paddingHorizontal: 10, paddingVertical: 2, opacity: weeksBack === 0 ? 0.3 : 1 }}>
-                  <Text style={{ fontSize: 20, color: COLORS.purple, fontWeight: '600' }}>›</Text>
+                  <Text style={{ fontSize: 20, color: theme.accentText, fontWeight: '600' }}>›</Text>
                 </TouchableOpacity>
               </View>
             }
@@ -289,7 +304,7 @@ export function TodayScreen() {
                             width: 14,
                             height: h,
                             borderRadius: 7,
-                            backgroundColor: totals[i] > 0 || isToday ? COLORS.purple : COLORS.track,
+                            backgroundColor: totals[i] > 0 || isToday ? theme.accent : COLORS.track,
                           }}
                         />
                         <Text
@@ -330,7 +345,7 @@ export function TodayScreen() {
               {daySpends.map((s) => (
                 <Row
                   key={s.id}
-                  left={<CategoryIcon category={s.category} color={COLORS.purple} />}
+                  left={<CategoryIcon category={s.category} color={theme.accentText} />}
                   title={s.description}
                   subtitle={categoryLabel(s.category)}
                   amount={formatRupees(s.amount_paise)}

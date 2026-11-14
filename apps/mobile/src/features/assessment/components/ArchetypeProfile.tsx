@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { bandLabel, barPercent, DIMENSIONS, guideFor } from '@/features/assessment/archetypeGuide';
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import type { ArchetypeCard, AssessmentResult } from '@/features/assessment/types';
+import { buildTheme } from '@/features/theme/archetypeTheme';
 
 function TraitCard({ title, items, dot }: { title: string; items: string[]; dot: string }) {
   return (
@@ -76,10 +77,11 @@ function DimensionBar({ label, meaning, score, band, color }: {
 export function ArchetypeProfile({ result }: { result: AssessmentResult }) {
   const { primary, secondary, tertiary } = result;
   const guide = guideFor(primary.slug);
+  const theme = buildTheme(primary.slug);
 
   return (
     <View style={{ gap: 20 }}>
-      <LinearGradient colors={[guide.color, COLORS.cardDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
+      <LinearGradient colors={[guide.color, theme.deep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
         <View style={styles.badge}>
           <Text style={styles.badgeText}>YOUR PRIMARY PATTERN</Text>
         </View>
@@ -96,9 +98,9 @@ export function ArchetypeProfile({ result }: { result: AssessmentResult }) {
       </View>
 
       <View style={styles.panel}>
-        <InsightRow title="What drives you" body={guide.motivation} color={guide.color} />
-        <InsightRow title="What you need" body={guide.coreNeed} color={guide.color} />
-        <InsightRow title="Where you can grow" body={guide.growth} color={guide.color} />
+        <InsightRow title="What drives you" body={guide.motivation} color={theme.accentText} />
+        <InsightRow title="What you need" body={guide.coreNeed} color={theme.accentText} />
+        <InsightRow title="Where you can grow" body={guide.growth} color={theme.accentText} />
         <View style={[styles.belief, { backgroundColor: `${guide.soft}55`, borderLeftColor: guide.color }]}>
           <Text style={styles.beliefText}>{guide.belief}</Text>
         </View>
@@ -157,7 +159,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     borderRadius: 24,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
   },
@@ -170,7 +172,7 @@ const styles = StyleSheet.create({
     gap: 14,
     padding: 18,
     borderRadius: 24,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
   },
@@ -182,7 +184,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 20,
     borderLeftWidth: 4,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
   },
