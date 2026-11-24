@@ -47,7 +47,7 @@ EntityId = uuid.UUID
 
 
 def get_ledger_repo(request: Request) -> LedgerRepository:
-    return request.app.state.ledger_repo
+    return request.app.state.money_repo
 
 
 Repo = Annotated[LedgerRepository, Depends(get_ledger_repo)]

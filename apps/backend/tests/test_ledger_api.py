@@ -3,129 +3,20 @@
 Run: cd apps/backend && python -m pytest tests/test_ledger_api.py -v
 """
 
-import uuid
-from datetime import UTC, datetime, timedelta
-
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies.auth import get_current_claims
 from app.features.auth.router import limiter
 from app.features.money.ledger_router import get_ledger_repo
-from app.features.money.repository import MoneyConflictError
 from app.main import app
+from tests.fakes import FakeLedger, key
 
 USER_A = "11111111-1111-4111-8111-111111111111"
 USER_B = "22222222-2222-4222-8222-222222222222"
 BASE = "/api/v1/money"
 TODAY = "2026-11-16"
 Q = {"today": TODAY}
-
-_LAST = [datetime.now(UTC)]
-
-
-def _now() -> str:
-    _LAST[0] = max(datetime.now(UTC), _LAST[0] + timedelta(microseconds=1))
-    return _LAST[0].isoformat()
-
-
-def key() -> str:
-    return str(uuid.uuid4())
-
-
-class FakeLedger:
-    """Behaves like the tables: unique client keys and active names, soft delete."""
-
-    def __init__(self) -> None:
-        self.accounts: list[dict] = []
-        self.txns: list[dict] = []
-
-    async def list_accounts(self, user_id):
-        return [a for a in self.accounts if a["user_id"] == user_id]
-
-    async def create_account(self, user_id, data, opening_paise):
-        for t in self.txns:
-            if t["user_id"] == user_id and t["client_key"] == str(data.client_key):
-                return next(a for a in self.accounts if a["id"] == t["account_id"])
-        if any(
-            a["user_id"] == user_id and a["archived_at"] is None
-            and a["name"].lower() == data.name.lower()
-            for a in self.accounts
-        ):  # fmt: skip
-            raise MoneyConflictError("name")
-        account = {
-            "id": key(), "user_id": user_id, "name": data.name, "kind": data.kind,
-            "bank": data.bank, "icon": data.icon, "archived_at": None, "created_at": _now(),
-        }  # fmt: skip
-        self.accounts.append(account)
-        await self.add_transaction(
-            user_id,
-            {
-                "client_key": str(data.client_key), "type": "opening",
-                "amount_paise": opening_paise, "account_id": account["id"],
-                "description": "Opening balance", "occurred_on": data.balance_on.isoformat(),
-            },
-        )  # fmt: skip
-        return account
-
-    async def update_account(self, user_id, account_id, data):
-        for a in self.accounts:
-            if a["id"] == account_id and a["user_id"] == user_id and a["archived_at"] is None:
-                a.update(data.model_dump(mode="json"))
-                return a
-        return None
-
-    async def archive_account(self, user_id, account_id):
-        for a in self.accounts:
-            if a["id"] == account_id and a["user_id"] == user_id and a["archived_at"] is None:
-                a["archived_at"] = _now()
-                return True
-        return False
-
-    async def list_transactions(self, user_id, start=None, end=None, include_deleted=False):
-        rows = [
-            t for t in self.txns
-            if t["user_id"] == user_id and (include_deleted or t["deleted_at"] is None)
-            and (start is None or start.isoformat() <= t["occurred_on"] <= end.isoformat())
-        ]  # fmt: skip
-        return sorted(rows, key=lambda t: (t["occurred_on"], t["created_at"]), reverse=True)
-
-    async def get_transaction(self, user_id, txn_id):
-        return next((t for t in self.txns if t["id"] == txn_id and t["user_id"] == user_id), None)
-
-    async def get_by_client_key(self, user_id, client_key):
-        return next(
-            (t for t in self.txns if t["user_id"] == user_id and t["client_key"] == client_key), None
-        )
-
-    async def add_transaction(self, user_id, body):
-        existing = await self.get_by_client_key(user_id, body["client_key"])
-        if existing:
-            return existing, False
-        now = _now()
-        row = {
-            "id": key(), "user_id": user_id, "account_id": None, "to_account_id": None,
-            "category": None, "description": None, "note": None, "reason": None,
-            "khata_entry_id": None, "refund_of": None, "deleted_at": None,
-            "created_at": now, "updated_at": now, **body,
-        }  # fmt: skip
-        self.txns.append(row)
-        return row, True
-
-    async def update_transaction(self, user_id, txn_id, body):
-        t = await self.get_transaction(user_id, txn_id)
-        if t is None or t["deleted_at"]:
-            return None
-        t.update(body, updated_at=_now())
-        return t
-
-    async def set_deleted(self, user_id, txn_id, deleted):
-        t = await self.get_transaction(user_id, txn_id)
-        if t is None or (t["deleted_at"] is None) != deleted:
-            return None
-        t["deleted_at"] = _now() if deleted else None
-        return t
-
 
 @pytest.fixture(autouse=True)
 def _isolate():

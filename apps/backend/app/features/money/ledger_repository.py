@@ -1,13 +1,15 @@
 """Persistence for the account ledger, over Supabase PostgREST.
 
-Reuses MoneyRepository's client and helpers: every query filters by a user id
-already parsed as a UUID, and bodies are never logged.
+Extends MoneyRepository (its client and helpers): every query filters by a
+user id already parsed as a UUID, and bodies are never logged. This is the one
+repository the money and ledger routers share.
 """
 
 from datetime import UTC, date, datetime
 
 from app.features.money.ledger import Account, Txn
 from app.features.money.ledger_schemas import AccountCreate, AccountUpdate
+from app.features.money.schemas import KhataCreate, KhataEntry, SpendCreate
 from app.features.money.repository import (
     _REP,
     MoneyConflictError,
@@ -159,6 +161,100 @@ class LedgerRepository(MoneyRepository):
             prefer=_REP,
         )
         return rows[0] if rows else None
+
+    # Khata on the ledger (sql/011) ---------------------------------------------
+
+    async def add_khata_entry(
+        self,
+        user_id: str,
+        data: KhataCreate,
+        client_key: str,
+        account_id: str | None,
+        on: date,
+    ) -> KhataEntry:
+        """The person record and its lend or borrow entry, atomically. Retry-safe by client key."""
+        row = await self._rpc(
+            "add_khata_entry",
+            {
+                "p_user": _uid(user_id),
+                "p_client_key": _uid(client_key),
+                "p_direction": data.direction,
+                "p_person": data.person,
+                "p_amount": data.amount_paise,
+                "p_note": data.note,
+                "p_account": _uid(account_id) if account_id else None,
+                "p_on": on.isoformat(),
+            },
+        )
+        if not row or row.get("id") is None:
+            raise MoneyStoreError("Money service returned no row.")
+        return KhataEntry(**row)
+
+    async def settle_khata_entry(
+        self, user_id: str, entry_id: str, account_id: str | None, on: date
+    ) -> KhataEntry | None:
+        """None when the entry is missing, not the user's or already settled."""
+        row = await self._rpc(
+            "settle_khata_entry",
+            {
+                "p_user": _uid(user_id),
+                "p_entry": _uid(entry_id),
+                "p_account": _uid(account_id) if account_id else None,
+                "p_on": on.isoformat(),
+            },
+        )
+        return KhataEntry(**row) if row and row.get("id") is not None else None
+
+    # Subscription payments on the ledger (sql/011) ------------------------------
+
+    async def log_subscription_txn(
+        self, user_id: str, account_id: str | None, data: SpendCreate
+    ) -> dict:
+        row = await self._rpc(
+            "log_subscription_txn",
+            {
+                "p_user": _uid(user_id),
+                "p_account": _uid(account_id) if account_id else None,
+                "p_description": data.description,
+                "p_amount": data.amount_paise,
+                "p_on": data.spent_on.isoformat(),
+                "p_billing_day": data.billing_day,
+            },
+        )
+        if not row or row.get("id") is None:
+            raise MoneyStoreError("Money service returned no row.")
+        return row
+
+    async def answer_cycle(
+        self, user_id: str, sub_id: str, month: date, active: bool, account_id: str | None = None
+    ) -> bool:
+        """False when the subscription is not the user's; a repeat answer is a no-op (True)."""
+        result = await self._request(
+            "POST",
+            "rpc/answer_cycle_ledger",
+            json={
+                "p_user": _uid(user_id),
+                "p_subscription": _uid(sub_id),
+                "p_month": month.isoformat(),
+                "p_active": active,
+                "p_account": _uid(account_id) if account_id else None,
+            },
+        )
+        return result is True
+
+    async def list_cycle_months(self, user_id: str) -> dict[str, set[date]]:
+        """Answered months per subscription; a month whose payment was deleted is open again."""
+        rows = await self._request("POST", "rpc/answered_cycles", json={"p_user": _uid(user_id)})
+        months: dict[str, set[date]] = {}
+        for row in rows or []:
+            months.setdefault(row["subscription_id"], set()).add(date.fromisoformat(row["month"]))
+        return months
+
+    async def _rpc(self, name: str, args: dict) -> dict | None:
+        row = await self._request("POST", f"rpc/{name}", json=args)
+        return row[0] if isinstance(row, list) and row else (row or None)
+
+    # Soft delete ---------------------------------------------------------------
 
     async def set_deleted(self, user_id: str, txn_id: str, deleted: bool) -> dict | None:
         """Soft delete (deleted=True) or Undo (False). None when there was nothing to change."""

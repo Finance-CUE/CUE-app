@@ -5,6 +5,7 @@ Amounts are integer paise. Request models are strict: no type coercion
 are the exception: they arrive as ISO strings and are parsed.
 """
 
+import uuid
 from datetime import date, datetime
 from typing import Annotated, Literal
 
@@ -72,10 +73,18 @@ class SpendUpdate(_StrictRequest):
     spent_on: _BoundedDate
 
 
+_OptionalId = Annotated[uuid.UUID, Field(strict=False)] | None
+
+
 class SettleRequest(_StrictRequest):
-    """How a borrowed amount was paid back; recorded on the logged spend."""
+    """Where the money came back to or was paid from.
+
+    account_id is the account chip. Older apps send only method: cash settles
+    against the Cash account, UPI (or nothing) against the bank account.
+    """
 
     method: Literal["cash", "upi"] | None = None
+    account_id: _OptionalId = None
 
 
 class StartingMoneyPut(_StrictRequest):
@@ -88,6 +97,9 @@ class KhataCreate(_StrictRequest):
     person: _Name
     amount_paise: _Positive
     note: _Note = None
+    # The account chip (default Cash). Older apps send neither field.
+    account_id: _OptionalId = None
+    client_key: _OptionalId = None
 
 
 class SubscriptionCreate(_StrictRequest):
@@ -152,23 +164,10 @@ class DueCycle(BaseModel):
     billing_on: date
 
 
-class Credit(BaseModel):
-    """Money that came back into the balance: a lent Khata entry marked settled."""
-
-    amount_paise: int
-    at: datetime
-
-
 class TrendPoint(BaseModel):
     date: date
     balance_paise: int | None
     spent_paise: int
-
-
-class BalanceSnapshot(BaseModel):
-    bank_paise: int
-    cash_paise: int
-    recorded_at: datetime
 
 
 class NudgeTemplate(BaseModel):
@@ -185,13 +184,15 @@ class StartingMoney(BaseModel):
 
 
 class MoneySummary(BaseModel):
+    """The old app's summary, served from the ledger (see legacy.build_summary)."""
+
     net_worth_paise: int | None
+    # Today's bank and cash balances; null until the user has an account.
     starting_money: StartingMoney | None
-    # Spends logged after the balance was last set; already taken off net_worth_paise.
+    # Kept for older apps. Balances are always current now, so these are 0.
     spent_since_update_paise: int = 0
-    # Money lent and marked settled (paid back to you) since then; already added.
     received_since_update_paise: int = 0
-    # Bank + cash now: the saved balance, less spends, plus money received back.
+    # Bank + cash now (the spec's available balance).
     balance_paise: int | None = None
     owed_to_you_paise: int
     you_owe_paise: int

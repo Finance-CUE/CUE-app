@@ -1,22 +1,17 @@
-from datetime import UTC, date, datetime
+from datetime import date
 from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
 
 from app.features.money.schemas import (
-    BalanceSnapshot,
     CycleAnswer,
     KhataCreate,
-    Spend,
     SpendCreate,
-    StartingMoney,
 )
 from app.features.money.service import (
     billing_date,
-    build_trend,
     due_months,
-    net_worth,
     next_billing_on,
 )
 
@@ -76,48 +71,6 @@ def test_due_months_skips_answered_and_clamps():
         date(2026, 1, 1),
         date(2026, 2, 1),
     ]  # Feb billing date is the 28th, on or before Mar 1
-
-
-def test_net_worth_is_none_without_starting_money():
-    assert net_worth(None) is None
-
-
-def test_net_worth_is_balance_less_later_spends_plus_money_received_back():
-    start = StartingMoney(bank_paise=50_000_00, cash_paise=2_000_00, set_at=datetime.now(UTC))
-    assert net_worth(start) == 52_000_00
-    assert net_worth(start, 1_000_00, 300_00) == 52_000_00 - 1_000_00 + 300_00
-
-
-def _snap(day, hour, bank, cash=0):
-    return BalanceSnapshot(
-        bank_paise=bank, cash_paise=cash, recorded_at=datetime(2026, 10, day, hour, tzinfo=IST)
-    )
-
-
-def _spend(day, amount):
-    return Spend(
-        id=str(day), description="x", amount_paise=amount, category="food",
-        spent_on=date(2026, 10, day), created_at=datetime(2026, 10, day, tzinfo=UTC),
-    )  # fmt: skip
-
-
-def test_trend_carries_balance_forward_less_later_spends_and_none_before_first_snapshot():
-    history = [_snap(3, 23, 1000, 50), _snap(5, 1, 2000), _snap(5, 9, 3000, 10)]
-    spends = [_spend(4, 100), _spend(4, 25), _spend(6, 7)]
-    pts = build_trend(history, spends, date(2026, 10, 2), date(2026, 10, 6), IST)
-    assert [p.date for p in pts] == [date(2026, 10, d) for d in range(2, 7)]
-    # Spends logged after a snapshot come off it; a newer snapshot already includes them.
-    assert [p.balance_paise for p in pts] == [None, 1050, 925, 3010, 3003]
-    assert [p.spent_paise for p in pts] == [0, 0, 125, 0, 7]
-
-
-def test_trend_buckets_snapshots_by_local_day():
-    # 20:00 UTC on the 3rd is 01:30 IST on the 4th.
-    snap = BalanceSnapshot(
-        bank_paise=900, cash_paise=0, recorded_at=datetime(2026, 10, 3, 20, tzinfo=UTC)
-    )
-    pts = build_trend([snap], [], date(2026, 10, 3), date(2026, 10, 4), IST)
-    assert [p.balance_paise for p in pts] == [None, 900]
 
 
 def test_spend_accepts_iso_date_and_strips_description():
@@ -198,15 +151,3 @@ def test_billing_day_required_for_subscription_and_forbidden_otherwise(category,
     else:
         with pytest.raises(ValidationError):
             SpendCreate.model_validate(payload)
-
-
-def test_trend_adds_money_received_back_after_the_snapshot():
-    from app.features.money.schemas import Credit
-
-    history = [_snap(3, 9, 1000)]
-    credits = [
-        Credit(amount_paise=400, at=datetime(2026, 10, 5, 12, tzinfo=IST)),
-        Credit(amount_paise=99, at=datetime(2026, 10, 3, 8, tzinfo=IST)),  # before the snapshot
-    ]
-    pts = build_trend(history, [], date(2026, 10, 3), date(2026, 10, 6), IST, credits)
-    assert [p.balance_paise for p in pts] == [1000, 1000, 1400, 1400]

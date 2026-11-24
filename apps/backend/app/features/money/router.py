@@ -1,5 +1,9 @@
 """Money and profile endpoints.
 
+These are the routes the current app (1.1.x) uses. Since the ledger release
+they read and write the account ledger (sql/010, sql/011) with the same
+request and response shapes; legacy.py does the translation.
+
 The user is always the verified token subject. Rate limits share the auth
 router's limiter. Request bodies are never logged.
 """
@@ -14,13 +18,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from app.features.assessment.repository import AssessmentRepository
 from app.features.assessment.router import UserId, get_assessment_repo
 from app.features.auth.router import limiter
+from app.features.money import ledger, legacy
 from app.features.money.archetype_booklet import load_archetype_context
+from app.features.money.ledger_repository import LedgerRepository, to_ledger_txn
+from app.features.money.ledger_schemas import AccountCreate
 from app.features.money.nudges import HISTORY_DAYS, build_plan
-from app.features.money.repository import MoneyConflictError, MoneyRepository, MoneyStoreError
+from app.features.money.repository import MoneyConflictError, MoneyStoreError
 from app.features.money.schemas import (
     MAX_DATE,
     MIN_DATE,
-    Credit,
     CycleAnswer,
     SettleRequest,
     DueCycle,
@@ -39,7 +45,7 @@ from app.features.money.schemas import (
     SubscriptionCreate,
     TrendPoint,
 )
-from app.features.money.service import billing_date, build_trend, due_months, net_worth, next_billing_on
+from app.features.money.service import billing_date, due_months, next_billing_on
 
 router = APIRouter(prefix="/money", tags=["money"])
 profile_router = APIRouter(prefix="/profile", tags=["profile"])
@@ -49,7 +55,7 @@ TREND_DAYS = 30
 Today = Annotated[date, Query(ge=MIN_DATE, le=MAX_DATE)]
 
 
-def get_money_repo(request: Request) -> MoneyRepository:
+def get_money_repo(request: Request) -> LedgerRepository:
     return request.app.state.money_repo
 
 
@@ -63,7 +69,7 @@ def get_tz(tz: Annotated[str, Query(max_length=64)] = "Asia/Kolkata") -> ZoneInf
 
 
 Tz = Annotated[ZoneInfo, Depends(get_tz)]
-Repo = Annotated[MoneyRepository, Depends(get_money_repo)]
+Repo = Annotated[LedgerRepository, Depends(get_money_repo)]
 EntityId = uuid.UUID
 
 
@@ -74,6 +80,27 @@ def _removed(found: bool) -> Response:
             detail="This entry no longer exists. Pull down to refresh.",
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+async def _ledger(repo: LedgerRepository, user_id: str):
+    return await repo.list_accounts(user_id), [
+        to_ledger_txn(r) for r in await repo.list_transactions(user_id)
+    ]
+
+
+async def _spends(repo: LedgerRepository, user_id: str, start: date, end: date) -> list[Spend]:
+    return legacy.spends_of(await repo.list_transactions(user_id, start, end))
+
+
+async def _chosen_account(repo: LedgerRepository, user_id: str, account_id: uuid.UUID) -> str:
+    """The account chip's account, if it is the user's and open."""
+    rows = await repo.list_accounts(user_id)
+    if not any(r["id"] == str(account_id) and r.get("archived_at") is None for r in rows):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="That account isn't available. Pull down to refresh.",
+        )
+    return str(account_id)
 
 
 def _next_billing(sub: Subscription, answered: dict[str, set[date]], today: date) -> date | None:
@@ -95,15 +122,30 @@ async def list_spends(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Choose a date range of at most {MAX_RANGE_DAYS} days.",
         )
-    return await repo.list_spends(user_id, start, end)
+    return await _spends(repo, user_id, start, end)
 
 
 @router.post("/spends", status_code=status.HTTP_201_CREATED)
 @limiter.limit("60/minute")
 async def add_spend(request: Request, payload: SpendCreate, user_id: UserId, repo: Repo) -> Spend:
+    """An expense on the user's bank account (the old app has no account picker)."""
+    account = legacy.pick_account(await repo.list_accounts(user_id), "bank")
     if payload.category == "subscription":
-        return await repo.add_subscription_spend(user_id, payload)
-    return await repo.add_spend(user_id, payload)
+        return legacy.to_spend(await repo.log_subscription_txn(user_id, account, payload))
+    row, _ = await repo.add_transaction(
+        user_id,
+        {
+            "client_key": str(uuid.uuid4()),
+            "type": "expense",
+            "amount_paise": payload.amount_paise,
+            "account_id": account,
+            "category": legacy.OLD_TO_NEW[payload.category],
+            "description": payload.description,
+            "occurred_on": payload.spent_on.isoformat(),
+            "source": "app" if account else "legacy",
+        },
+    )
+    return legacy.to_spend(row)
 
 
 @router.patch("/spends/{spend_id}")
@@ -111,13 +153,31 @@ async def add_spend(request: Request, payload: SpendCreate, user_id: UserId, rep
 async def edit_spend(
     request: Request, spend_id: EntityId, payload: SpendUpdate, user_id: UserId, repo: Repo
 ) -> Spend:
-    updated = await repo.update_spend(user_id, str(spend_id), payload)
+    current = await repo.get_transaction(user_id, str(spend_id))
+    updated = None
+    # Subscription payments are edited through their subscription.
+    if (
+        current is not None
+        and current["type"] == "expense"
+        and not current.get("deleted_at")
+        and current.get("category") != "subscriptions"
+    ):
+        updated = await repo.update_transaction(
+            user_id,
+            str(spend_id),
+            {
+                "description": payload.description,
+                "amount_paise": payload.amount_paise,
+                "category": legacy.OLD_TO_NEW[payload.category],
+                "occurred_on": payload.spent_on.isoformat(),
+            },
+        )
     if updated is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="This entry can't be edited. Pull down to refresh, or delete it and log it again.",
         )
-    return updated
+    return legacy.to_spend(updated)
 
 
 @router.delete("/spends/{spend_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -125,7 +185,11 @@ async def edit_spend(
 async def delete_spend(
     request: Request, spend_id: EntityId, user_id: UserId, repo: Repo
 ) -> Response:
-    return _removed(await repo.delete_spend(user_id, str(spend_id)))
+    current = await repo.get_transaction(user_id, str(spend_id))
+    if current is None or current["type"] != "expense" or current.get("deleted_at"):
+        return _removed(False)
+    # Soft delete: the new app's Undo can restore it.
+    return _removed(await repo.set_deleted(user_id, str(spend_id), True) is not None)
 
 
 # Starting money and summary ----------------------------------------------------
@@ -134,37 +198,58 @@ async def delete_spend(
 @router.put("/starting-money")
 @limiter.limit("60/minute")
 async def put_starting_money(
-    request: Request, payload: StartingMoneyPut, user_id: UserId, repo: Repo
+    request: Request, payload: StartingMoneyPut, user_id: UserId, repo: Repo, tz: Tz
 ) -> StartingMoney:
-    return await repo.put_starting_money(user_id, payload)
+    """The old "set your balance" sheet.
+
+    First time: a Bank and a Cash account, opened today. After that, each one
+    that differs from today's balance gets a dated adjustment, so history is
+    never rewritten (spec 4.5, Reconcile).
+    """
+    today = datetime.now(tz).date()
+    rows, txns = await _ledger(repo, user_id)
+    balances = ledger.account_balances_on(
+        [ledger.Account(id=r["id"], kind=r["kind"]) for r in rows], txns, today
+    )
+    bank_now, cash_now = legacy.split_balances(rows, balances)
+    for prefer, kind, name, target, now in (
+        ("bank", "savings", "Bank", payload.bank_paise, bank_now),
+        ("cash", "cash", "Cash", payload.cash_paise, cash_now),
+    ):
+        same = [r for r in rows if (r["kind"] == "cash") == (prefer == "cash")]
+        account = legacy.pick_account(same, prefer)
+        if account is None:
+            await repo.create_account(
+                user_id,
+                AccountCreate(
+                    client_key=uuid.uuid4(), name=name, kind=kind,
+                    opening_paise=target, balance_on=today,
+                ),  # fmt: skip
+                target,
+            )
+        elif target != now:
+            await repo.add_transaction(
+                user_id,
+                {
+                    "client_key": str(uuid.uuid4()),
+                    "type": "adjustment",
+                    "amount_paise": target - now,
+                    "account_id": account,
+                    "description": "Balance adjustment",
+                    "reason": "Balance updated",
+                    "occurred_on": today.isoformat(),
+                },
+            )
+    return StartingMoney(
+        bank_paise=payload.bank_paise, cash_paise=payload.cash_paise, set_at=datetime.now(tz)
+    )
 
 
 @router.get("/summary")
 @limiter.limit("120/minute")
-async def summary(request: Request, user_id: UserId, repo: Repo) -> MoneySummary:
-    starting = await repo.get_starting_money(user_id)
-    open_khata = await repo.list_open_khata(user_id)
-    lent = sum(k.amount_paise for k in open_khata if k.direction == "lent")
-    borrowed = sum(k.amount_paise for k in open_khata if k.direction == "borrowed")
-    since = received = 0
-    balance = None
-    if starting:
-        # Balances saved before set_at was restamped on update still left a history
-        # row; the newest of the two is when the typed balance was last true.
-        history = await repo.list_balance_history(user_id)
-        anchor = max([starting.set_at, *(h.recorded_at for h in history)])
-        since = await repo.sum_spends_logged_after(user_id, anchor)
-        received = sum(c.amount_paise for c in await repo.list_received_after(user_id, anchor))
-        balance = starting.bank_paise + starting.cash_paise - since + received
-    return MoneySummary(
-        net_worth_paise=net_worth(starting, since, received),
-        starting_money=starting,
-        owed_to_you_paise=lent,
-        you_owe_paise=borrowed,
-        spent_since_update_paise=since,
-        received_since_update_paise=received,
-        balance_paise=balance,
-    )
+async def summary(request: Request, user_id: UserId, repo: Repo, tz: Tz) -> MoneySummary:
+    rows, txns = await _ledger(repo, user_id)
+    return legacy.build_summary(rows, txns, datetime.now(tz).date())
 
 
 # Khata -------------------------------------------------------------------------
@@ -179,9 +264,21 @@ async def list_khata(request: Request, user_id: UserId, repo: Repo) -> list[Khat
 @router.post("/khata", status_code=status.HTTP_201_CREATED)
 @limiter.limit("60/minute")
 async def add_khata(
-    request: Request, payload: KhataCreate, user_id: UserId, repo: Repo
+    request: Request, payload: KhataCreate, user_id: UserId, repo: Repo, tz: Tz
 ) -> KhataEntry:
-    return await repo.add_khata(user_id, payload)
+    """Lend or borrow: money leaves or arrives in the chosen account (default
+    Cash), and the receivable or liability counts in net worth."""
+    if payload.account_id is not None:
+        account = await _chosen_account(repo, user_id, payload.account_id)
+    else:
+        account = legacy.pick_account(await repo.list_accounts(user_id), "cash")
+    return await repo.add_khata_entry(
+        user_id,
+        payload,
+        str(payload.client_key or uuid.uuid4()),
+        account,
+        datetime.now(tz).date(),
+    )
 
 
 @router.post("/khata/{entry_id}/settle", status_code=status.HTTP_204_NO_CONTENT)
@@ -194,27 +291,17 @@ async def settle_khata(
     tz: Tz,
     payload: SettleRequest | None = None,
 ) -> Response:
-    """Khata is a record: settling moves real money, so the balance follows it.
-
-    Settling money you lent means it came back (the summary adds it to the
-    balance). Settling money you borrowed means you paid it back, so a
-    "Paid back to <name>" spend is logged and comes off the balance.
-    """
-    entry = await repo.settle_khata(user_id, str(entry_id))
-    if entry is None:
-        return _removed(False)
-    if entry.direction == "borrowed":
-        method = {"cash": " in cash", "upi": " via UPI"}.get(payload.method if payload else None, "")
-        await repo.add_spend(
-            user_id,
-            SpendCreate(
-                description=f"Paid back to {entry.person}{method}",
-                amount_paise=entry.amount_paise,
-                category="other",
-                spent_on=datetime.now(tz).date(),
-            ),
+    """Settling moves real money: money lent comes back into the account, money
+    borrowed is paid from it. Repayments are not income or spending."""
+    if payload is not None and payload.account_id is not None:
+        account = await _chosen_account(repo, user_id, payload.account_id)
+    else:
+        method = payload.method if payload else None
+        account = legacy.pick_account(
+            await repo.list_accounts(user_id), "cash" if method == "cash" else "bank"
         )
-    return _removed(True)
+    entry = await repo.settle_khata_entry(user_id, str(entry_id), account, datetime.now(tz).date())
+    return _removed(entry is not None)
 
 
 @router.delete("/khata/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -267,7 +354,10 @@ async def due_subscriptions(
 async def answer_cycle(
     request: Request, sub_id: EntityId, payload: CycleAnswer, user_id: UserId, repo: Repo
 ) -> Response:
-    return _removed(await repo.answer_cycle(user_id, str(sub_id), payload.month, payload.active))
+    account = legacy.pick_account(await repo.list_accounts(user_id), "bank")
+    return _removed(
+        await repo.answer_cycle(user_id, str(sub_id), payload.month, payload.active, account)
+    )
 
 
 @router.post("/subscriptions", status_code=status.HTTP_201_CREATED)
@@ -320,7 +410,7 @@ async def nudge_plan(
 ) -> list[PlannedNudge]:
     now = datetime.now(tz)
     start = now.date() - timedelta(days=HISTORY_DAYS - 1)
-    spends = await repo.list_spends(user_id, start, now.date())
+    spends = await _spends(repo, user_id, start, now.date())
     prefs = await repo.get_nudges(user_id)
     result = await assessment_repo.get_latest_result(user_id)
     slug = result.primary if result else None
@@ -344,16 +434,7 @@ async def nudge_plan(
 async def trend(
     request: Request, today: Today, tz: Tz, user_id: UserId, repo: Repo
 ) -> list[TrendPoint]:
+    """30 days of bank + cash and daily spending, from the ledger."""
     start = today - timedelta(days=TREND_DAYS - 1)
-    history = await repo.list_balance_history(user_id)
-    credits: list[Credit] = []
-    if history:
-        credits = await repo.list_received_after(user_id, min(h.recorded_at for h in history))
-    return build_trend(
-        history,
-        await repo.list_spends(user_id, start, today),
-        start,
-        today,
-        tz,
-        credits,
-    )
+    rows, txns = await _ledger(repo, user_id)
+    return legacy.build_trend(rows, txns, start, today)
