@@ -56,7 +56,7 @@ export function StartingMoneySheet({
       visible={visible}
       onClose={onClose}
       title="Update balance"
-      subtitle="What do you have right now? Leave either at ₹0.00.">
+      subtitle="What do you have right now? Leave either at ₹0.">
       <TextField label="Bank" value={bank} onChangeText={setBank} prefix="₹" placeholder="0" keyboardType="decimal-pad" />
       <TextField label="Cash" value={cash} onChangeText={setCash} prefix="₹" placeholder="0" keyboardType="decimal-pad" />
       <View
