@@ -272,6 +272,38 @@ def test_change_excludes_opening_balances_added_this_month():
     assert change == 5_200_00  # "↑ ₹5,200 this month", not ₹25,200
 
 
+# The account screen (4.5) ----------------------------------------------------------
+
+
+def test_account_movements_count_only_what_moved_the_balance():
+    txns = [
+        *BASE,
+        txn("income", 30_000_00, on=date(2026, 11, 12), account_id="bank", category="salary"),
+        txn("expense", 500_00, on=date(2026, 11, 13), account_id="bank", category="bills"),
+        txn("transfer", 1_000_00, on=date(2026, 11, 14), account_id="bank", to_account_id="cash"),
+        txn("adjustment", -200_00, on=date(2026, 11, 15), account_id="bank"),
+        # Inside the opening balance: dated before setup, so not a movement.
+        txn("expense", 9_999_00, on=date(2026, 11, 5), created=at(DAY), account_id="bank", category="bills"),
+    ]
+    from app.features.money.ledger import account_movements
+
+    assert account_movements("bank", txns, date(2026, 11, 1), DAY) == (30_000_00, 1_700_00)
+    assert account_movements("cash", txns, date(2026, 11, 1), DAY) == (1_000_00, 0)
+
+
+def test_account_months_newest_first_with_closing_balances():
+    from app.features.money.ledger import account_months
+
+    txns = [
+        *BASE,
+        txn("expense", 500_00, on=date(2026, 11, 13), account_id="bank", category="bills"),
+    ]
+    months = account_months(BANK, txns, DAY, count=3)
+    assert [m.month for m in months] == [date(2026, 11, 1), date(2026, 10, 1), date(2026, 9, 1)]
+    assert (months[0].money_in, months[0].money_out, months[0].closing) == (0, 500_00, 49_500_00)
+    assert months[1].closing is None  # before the "Balance on" date
+
+
 # Reconcile and archive ------------------------------------------------------------
 
 

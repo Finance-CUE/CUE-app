@@ -153,6 +153,51 @@ def account_balances_on(accounts: Iterable[Account], txns: list[Txn], day: date)
     return balances
 
 
+def account_movements(account_id: str, txns: list[Txn], start: date, end: date) -> tuple[int, int]:
+    """(money in, money out) of one account for transactions dated start..end.
+
+    Counts what moved the balance: never the opening, and nothing already
+    inside the opening balance ("Balance on"). Transfers count on both sides.
+    """
+    opening = _openings(txns).get(account_id)
+    money_in = money_out = 0
+    for t in txns:
+        if t.type == "opening" or not (start <= t.occurred_on <= end):
+            continue
+        if opening is not None and _key(t) <= _key(opening):
+            continue
+        for acct, delta in effects(t):
+            if acct != account_id:
+                continue
+            if delta > 0:
+                money_in += delta
+            else:
+                money_out -= delta
+    return money_in, money_out
+
+
+@dataclass(frozen=True)
+class AccountMonth:
+    month: date  # first of the month
+    money_in: int
+    money_out: int
+    closing: int | None  # end of the month, or today for this month; None before the opening
+
+
+def account_months(account: Account, txns: list[Txn], today: date, count: int = 6) -> list[AccountMonth]:
+    """Month by month, newest first: the account screen's history (spec 4.5)."""
+    months: list[AccountMonth] = []
+    first = today.replace(day=1)
+    for _ in range(count):
+        next_first = (first + timedelta(days=32)).replace(day=1)
+        end = min(next_first - timedelta(days=1), today)
+        money_in, money_out = account_movements(account.id, txns, first, end)
+        closing = account_balances_on([account], txns, end)[account.id]
+        months.append(AccountMonth(month=first, money_in=money_in, money_out=money_out, closing=closing))
+        first = (first - timedelta(days=1)).replace(day=1)
+    return months
+
+
 def khata_outstanding_on(txns: Iterable[Txn], day: date) -> tuple[int, int]:
     """(money lent outstanding, money borrowed outstanding) at the end of `day`.
 

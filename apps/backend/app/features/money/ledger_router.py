@@ -21,6 +21,8 @@ from app.features.money.ledger_repository import (
 )
 from app.features.money.ledger_schemas import (
     AccountCreate,
+    AccountDetailOut,
+    AccountMonthOut,
     AccountOut,
     AccountUpdate,
     AdjustRequest,
@@ -171,6 +173,34 @@ async def add_account(
     rows, txns = await _load(repo, user_id)
     balances = ledger.account_balances_on([to_ledger_account(r) for r in rows], txns, today)
     return _account_out(row, balances.get(row["id"]))
+
+
+@router.get("/accounts/{account_id}")
+@limiter.limit("120/minute")
+async def account_detail(
+    request: Request, account_id: EntityId, today: Today, user_id: UserId, repo: Repo
+) -> AccountDetailOut:
+    """The account screen: today's balance, money in and out this month, and six months of history."""
+    rows, txns = await _load(repo, user_id)
+    row = next((r for r in rows if r["id"] == str(account_id)), None)
+    if row is None:
+        raise _fail(status.HTTP_404_NOT_FOUND, "This account no longer exists. Pull down to refresh.")
+    account = to_ledger_account(row)
+    months = ledger.account_months(account, txns, today)
+    return AccountDetailOut(
+        account=_account_out(row, ledger.account_balances_on([account], txns, today)[account.id]),
+        money_in_this_month_paise=months[0].money_in,
+        money_out_this_month_paise=months[0].money_out,
+        months=[
+            AccountMonthOut(
+                month=m.month,
+                money_in_paise=m.money_in,
+                money_out_paise=m.money_out,
+                closing_paise=m.closing,
+            )
+            for m in months
+        ],
+    )
 
 
 @router.patch("/accounts/{account_id}")

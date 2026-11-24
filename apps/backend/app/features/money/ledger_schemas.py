@@ -189,6 +189,23 @@ class PositionOut(BaseModel):
     net_worth_paise: int
 
 
+class AccountMonthOut(BaseModel):
+    month: date
+    money_in_paise: int
+    money_out_paise: int
+    # End of that month (today for this month); None before the "Balance on" date.
+    closing_paise: int | None
+
+
+class AccountDetailOut(BaseModel):
+    """The account screen (spec 4.5): balance, this month and month by month."""
+
+    account: AccountOut
+    money_in_this_month_paise: int
+    money_out_this_month_paise: int
+    months: list[AccountMonthOut]
+
+
 class NetWorthOut(PositionOut):
     # None hides the line: no full previous month yet (suggestion 27).
     change_this_month_paise: int | None

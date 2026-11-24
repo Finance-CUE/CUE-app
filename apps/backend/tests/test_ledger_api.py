@@ -65,6 +65,7 @@ def test_every_ledger_route_requires_a_token():
     with TestClient(app) as c:
         calls = [
             c.get(f"{BASE}/accounts", params=Q),
+            c.get(f"{BASE}/accounts/{some}", params=Q),
             c.post(f"{BASE}/accounts", params=Q, json={}),
             c.patch(f"{BASE}/accounts/{some}", params=Q, json={}),
             c.post(f"{BASE}/accounts/{some}/archive", params=Q),
@@ -151,6 +152,22 @@ def test_edit_account_details(repo):
     r = c.patch(f"{BASE}/accounts/{a['id']}", params=Q, json={"name": "Salary account", "bank": "hdfc"})
     assert r.status_code == 200 and r.json()["name"] == "Salary account"
     assert r.json()["balance_paise"] == 50_000_00
+
+
+def test_account_screen_shows_this_month_and_history(repo):
+    c = client(repo)
+    a = add_account(c, on="2026-11-10")
+    entry(c, a["id"], amount_paise=1_000_00)
+    entry(c, a["id"], type="income", category="salary", amount_paise=5_000_00)
+    r = c.get(f"{BASE}/accounts/{a['id']}", params=Q)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["account"]["balance_paise"] == 54_000_00
+    assert (body["money_in_this_month_paise"], body["money_out_this_month_paise"]) == (5_000_00, 1_000_00)
+    assert [m["month"] for m in body["months"]][:2] == ["2026-11-01", "2026-10-01"]
+    assert body["months"][1]["closing_paise"] is None  # before "Balance on"
+    # Someone else's account is not found.
+    assert client(repo, USER_B).get(f"{BASE}/accounts/{a['id']}", params=Q).status_code == 404
 
 
 # Update balance / Reconcile -----------------------------------------------------------
