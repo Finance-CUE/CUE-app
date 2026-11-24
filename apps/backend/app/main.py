@@ -14,6 +14,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.features.assessment.repository import AssessmentRepository, AssessmentStoreError
 from app.features.auth.router import limiter
+from app.features.money.ledger_repository import LedgerRepository
 from app.features.money.repository import MoneyRepository, MoneyStoreError
 from app.features.auth.profiles import ProfileStore
 from app.features.auth.service import AuthError, SupabaseAuthClient
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
         app.state.jwk_client = PyJWKClient(settings.supabase_jwks_url, cache_keys=True)
         app.state.assessment_repo = AssessmentRepository(settings, client)
         app.state.money_repo = MoneyRepository(settings, client)
+        app.state.ledger_repo = LedgerRepository(settings, client)
         yield
 
 
