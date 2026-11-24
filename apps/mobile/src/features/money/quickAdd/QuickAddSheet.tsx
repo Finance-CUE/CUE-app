@@ -7,8 +7,8 @@ import { newClientKey } from '../accounts';
 import { ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { ChipRow, PrimaryButton, TextField } from '../components/ui';
 import { daysBefore, parseDisplayDate, toDisplayDate, toISODate } from '../dates';
-import { formatRupees as plainRupees, parseRupeesToPaise } from '../format';
-import { useAddTransaction, useTransactions } from '../hooks';
+import { formatRupees as plainRupees, paiseToInput, parseRupeesToPaise } from '../format';
+import { useAddTransaction, useTransactions, useUpdateTransaction } from '../hooks';
 import { useRupees } from '../privacy';
 import type { Account, LedgerTxn } from '../types';
 import { FieldError, FormError, Sheet, useGuardedSubmit } from '../sheets/Sheet';
@@ -29,7 +29,8 @@ import {
 
 export type QuickAddChoice = EntryKind | null;
 /** What the caller needs after a save: the entry (for Undo) and any low-balance note. */
-export type Saved = { txn: LedgerTxn; kind: EntryKind; lowNote: string | null; accountId: string };
+export type Saved = { txn: LedgerTxn; kind: EntryKind; lowNote: string | null; accountId: string; edited: boolean };
+export type Seed = { mode: 'edit' | 'duplicate'; txn: LedgerTxn };
 
 const TITLES: Record<EntryKind, string> = { expense: 'Expense', income: 'Income', transfer: 'Transfer' };
 const SAVE_ERROR = 'Not saved. Check your connection and try again.';
@@ -52,6 +53,7 @@ export function QuickAddSheet({
   accounts,
   defaultDate,
   presetAccountId,
+  seed = null,
   onClose,
   onSaved,
   onLendBorrow,
@@ -64,6 +66,8 @@ export function QuickAddSheet({
   defaultDate: string;
   /** e.g. "Add it as an expense instead" from Update balance. */
   presetAccountId?: string | null;
+  /** Edit an entry (any date), or Duplicate it into a new one. */
+  seed?: Seed | null;
   onClose: () => void;
   onSaved: (saved: Saved) => void;
   onLendBorrow: () => void;
@@ -84,7 +88,10 @@ export function QuickAddSheet({
   const [tried, setTried] = useState(false);
   const [clientKey, setClientKey] = useState(newClientKey);
   const saved = useRef<LedgerTxn | null>(null);
-  const mutation = useAddTransaction();
+  const create = useAddTransaction();
+  const update = useUpdateTransaction();
+  const editing = seed?.mode === 'edit' ? seed.txn : null;
+  const mutation = editing ? update : create;
   const { run, error } = useGuardedSubmit(visible, SAVE_ERROR);
 
   // A year of entries, for smart defaults and the last account used per type.
@@ -96,21 +103,24 @@ export function QuickAddSheet({
   // Seed the form each time the sheet opens, never while the user is typing.
   useEffect(() => {
     if (!visible) return;
-    setKind(initial);
-    setAmount('');
-    setDescription('');
-    setPickedCategory(null);
-    setPickedAccount(presetAccountId ?? null);
-    setPickedTo(null);
-    const start = defaultDate > todayISO ? todayISO : defaultDate;
+    const from = seed?.txn ?? null;
+    setKind(from ? (from.type as EntryKind) : initial);
+    setAmount(from ? paiseToInput(from.amount_paise) : '');
+    setDescription(from?.description ?? '');
+    setPickedCategory(from?.category ?? null);
+    setPickedAccount(from?.account_id ?? presetAccountId ?? null);
+    setPickedTo(from?.to_account_id ?? null);
+    // Editing keeps the entry's date; a duplicate is new, so it takes Today's selected date.
+    const wanted = seed?.mode === 'edit' && from ? from.occurred_on : defaultDate;
+    const start = wanted > todayISO ? todayISO : wanted;
     setDateChoice(start === todayISO ? 'today' : start === daysBefore(new Date(), 1) ? 'yesterday' : 'other');
     setOtherDate(toDisplayDate(start));
-    setNote('');
-    setMore(false);
+    setNote(from?.note ?? '');
+    setMore(Boolean(from?.note));
     setTried(false);
     setClientKey(newClientKey());
     // defaultDate and todayISO are read only when the sheet opens.
-  }, [visible, initial, presetAccountId]);
+  }, [visible, initial, presetAccountId, seed]);
 
   const paise = parseRupeesToPaise(amount);
   const defaults = kind && kind !== 'transfer' ? smartDefaults(history, kind, description) : null;
@@ -146,24 +156,37 @@ export function QuickAddSheet({
     setTried(true);
     if (!kind || Object.keys(errors).length > 0 || paise === null || !accountId || !date) return;
     const account = open.find((a) => a.id === accountId);
-    const lowNote = kind === 'income' ? null : lowBalanceNote(account, paise, formatRupees);
+    // An edit's old amount is already in the balance, so the note would mislead.
+    const lowNote = kind === 'income' || editing ? null : lowBalanceNote(account, paise, formatRupees);
     const text = description.trim();
+    const transfer = kind === 'transfer';
     void run(
       async () => {
-        saved.current = await mutation.mutateAsync({
-          client_key: clientKey,
-          type: kind,
-          amount_paise: paise,
-          account_id: accountId,
-          ...(kind === 'transfer' && toAccountId ? { to_account_id: toAccountId } : {}),
-          ...(kind !== 'transfer' && category ? { category } : {}),
-          ...(text ? { description: text } : {}),
-          ...(note.trim() ? { note: note.trim() } : {}),
-          occurred_on: date,
-        });
+        saved.current = editing
+          ? await update.mutateAsync({
+              id: editing.id,
+              amount_paise: paise,
+              account_id: accountId,
+              to_account_id: transfer ? toAccountId : null,
+              category: transfer ? null : category,
+              description: text || null,
+              note: note.trim() || null,
+              occurred_on: date,
+            })
+          : await create.mutateAsync({
+              client_key: clientKey,
+              type: kind,
+              amount_paise: paise,
+              account_id: accountId,
+              ...(transfer && toAccountId ? { to_account_id: toAccountId } : {}),
+              ...(!transfer && category ? { category } : {}),
+              ...(text ? { description: text } : {}),
+              ...(note.trim() ? { note: note.trim() } : {}),
+              occurred_on: date,
+            });
       },
       () => {
-        if (saved.current) onSaved({ txn: saved.current, kind, lowNote, accountId });
+        if (saved.current) onSaved({ txn: saved.current, kind, lowNote, accountId, edited: Boolean(editing) });
         onClose();
       },
     );
@@ -192,7 +215,7 @@ export function QuickAddSheet({
     <Sheet
       visible={visible}
       onClose={close}
-      title={TITLES[kind]}
+      title={editing ? `Edit ${TITLES[kind].toLowerCase()}` : TITLES[kind]}
       tall
       footer={
         <>

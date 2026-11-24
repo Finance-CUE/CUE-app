@@ -32,12 +32,15 @@ export function TodayHeader({
   weeksBack,
   onSelect,
   onWeeksBack,
+  onSearch,
 }: {
   today: Date;
   selected: string;
   weeksBack: number;
   onSelect: (iso: string) => void;
   onWeeksBack: (weeksBack: number) => void;
+  /** Opens Transaction history with the search field focused. */
+  onSearch: () => void;
 }) {
   const router = useRouter();
   const theme = useArchetypeTheme();
@@ -139,6 +142,7 @@ export function TodayHeader({
             }}
           />
         ) : null}
+        <IconChip label="Search" onPress={onSearch} />
       </View>
 
       <CalendarSheet

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   type NativeScrollEvent,
@@ -15,39 +15,33 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
-import { CategoryIcon, PlusIcon, RupeeIcon, SwapIcon } from '../components/icons';
+import { PlusIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { Card, EmptyCard, Fab, Row, SectionHeader } from '../components/ui';
-import { categoryLabel } from '../categories';
-import { daysUntil, formatDate, formatDateTime, toISODate, weekDays, weekStartBack } from '../dates';
+import { daysUntil, formatDate, toISODate, weekDays, weekStartBack } from '../dates';
 import { useRupees } from '../privacy';
 import {
-  useDeleteSpend,
   useDeleteSubscription,
-  useDeleteTransaction,
   useDueSubscriptions,
   useNetWorth,
   useSpends,
   useSubscriptions,
   useToday,
 } from '../hooks';
-import { Toast, type ToastMessage } from '../components/Toast';
-import { savedLabel } from '../quickAdd/model';
-import { type QuickAddChoice, QuickAddSheet, type Saved } from '../quickAdd/QuickAddSheet';
 import { AddAccountSheet } from '../sheets/AddAccountSheet';
 import { EntryDetailSheet } from '../sheets/EntryDetailSheet';
 import { KhataSheet } from '../sheets/KhataSheet';
-import { LogSpendSheet } from '../sheets/LogSpendSheet';
 import { SubscriptionPromptSheet } from '../sheets/SubscriptionPromptSheet';
 import { SubscriptionSheet } from '../sheets/SubscriptionSheet';
-import { UpdateBalanceSheet } from '../sheets/UpdateBalanceSheet';
 import { AccountsCard } from '../today/AccountsCard';
 import { helloLine, shortDay } from '../today/model';
 import { NetWorthCard } from '../today/NetWorthCard';
 import { PastDateBanner, TodayHeader } from '../today/TodayHeader';
-import type { DueCycle, Spend } from '../types';
+import { TodayTransactions } from '../transactions/TodayTransactions';
+import { useTxnFlows } from '../transactions/useTxnFlows';
+import type { DueCycle } from '../types';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
-type SheetName = 'log' | 'khata' | 'sub' | 'addAccount' | 'balance' | 'quick' | null;
+type SheetName = 'khata' | 'sub' | 'addAccount' | null;
 /** Scrolled this far, the header collapses to a 56px bar (spec 4.1). */
 const COLLAPSE_AT = 150;
 type Detail = { title: string; lines: string[]; onDelete: () => Promise<void>; onEdit?: () => void };
@@ -101,7 +95,6 @@ export function TodayScreen() {
   // null = the default day (today, or Sunday of a past week), so it follows midnight.
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const selected = selectedDay ?? (weeksBack === 0 ? todayISO : weekEnd);
-  const [editing, setEditing] = useState<Spend | null>(null);
   const changeWeek = (next: number) => {
     setWeeksBack(next);
     setSelectedDay(null);
@@ -113,7 +106,15 @@ export function TodayScreen() {
 
   // Net worth, its breakdown and the accounts card all read this one query.
   const netWorth = useNetWorth(todayISO);
-  const [balanceAccount, setBalanceAccount] = useState<string | null>(null);
+  const accounts = netWorth.data?.accounts ?? [];
+  // Quick Add, a transaction's detail, Update balance and the Undo toast.
+  const flows = useTxnFlows({
+    accounts,
+    defaultDate: selected,
+    onLendBorrow: () => setSheet('khata'),
+    onSubscription: () => setSheet('sub'),
+  });
+  const openQuick = flows.openQuick;
   const scroll = useRef<ScrollView>(null);
   const accountsY = useRef(0);
   const [collapsed, setCollapsed] = useState(false);
@@ -126,38 +127,7 @@ export function TodayScreen() {
   const due = useDueSubscriptions(todayISO);
   const dismissedKeys = dismissed.on === todayISO ? dismissed.keys : [];
   const prompt = (due.data ?? []).filter((c) => !dismissedKeys.includes(cycleKey(c)));
-  const delSpend = useDeleteSpend();
   const delSub = useDeleteSubscription();
-  const delTxn = useDeleteTransaction();
-  const [quick, setQuick] = useState<{ kind: QuickAddChoice; account: string | null }>({ kind: null, account: null });
-  const [toast, setToast] = useState<ToastMessage | null>(null);
-  const clearToast = useCallback(() => setToast(null), []);
-  const openQuick = (kind: QuickAddChoice, account: string | null = null) => {
-    setQuick({ kind, account });
-    setSheet('quick');
-  };
-  // "Expense saved Â· Undo", plus the low-balance note when an account went below â‚¹0.
-  const onSaved = ({ txn, kind, lowNote, accountId }: Saved) =>
-    setToast({
-      id: txn.id,
-      text: savedLabel(kind),
-      action: { label: 'Undo', onPress: () => void delTxn.mutateAsync(txn.id).catch(() => undefined) },
-      ...(lowNote
-        ? {
-            note: {
-              text: lowNote,
-              action: {
-                label: 'Update',
-                onPress: () => {
-                  setBalanceAccount(accountId);
-                  setSheet('balance');
-                },
-              },
-            },
-          }
-        : {}),
-    });
-
   const refresh = async () => {
     setRefreshing(true);
     try {
@@ -173,33 +143,8 @@ export function TodayScreen() {
   const weekMax = Math.max(...totals, 0);
   const selIdx = Math.max(0, days.findIndex((d) => toISODate(d) === selected));
   const selCount = byDay(selected).length;
-  const daySpends = byDay(selected);
   const isToday = selected === todayISO;
-  const close = () => {
-    setSheet(null);
-    setEditing(null);
-  };
-  const spendDetail = (s: Spend): Detail => ({
-    title: s.description,
-    lines: [
-      formatRupees(s.amount_paise),
-      categoryLabel(s.category),
-      formatDate(s.spent_on),
-      `Logged ${formatDateTime(s.created_at)}`,
-    ],
-    onDelete: async () => {
-      await delSpend.mutateAsync(s.id);
-    },
-    // Subscription payments are changed through the subscription, not here.
-    onEdit:
-      s.category === 'subscription'
-        ? undefined
-        : () => {
-            setDetail(null);
-            setEditing(s);
-            setSheet('log');
-          },
-  });
+  const close = () => setSheet(null);
   const active = (subs.data ?? []).filter((s) => s.active && s.next_billing_on);
   const upcoming = active.filter((s) => daysUntil(s.next_billing_on ?? '', now) <= 7);
   const later = active.filter((s) => !upcoming.includes(s));
@@ -249,6 +194,7 @@ export function TodayScreen() {
           weeksBack={weeksBack}
           onSelect={setSelectedDay}
           onWeeksBack={changeWeek}
+          onSearch={() => router.push('/transactions?search=1')}
         />
         {theme.slug ? (
           <Text style={{ marginTop: -6, fontSize: 15, fontStyle: 'italic', color: theme.accentText, fontFamily: HEADING_FONT }}>
@@ -260,10 +206,7 @@ export function TodayScreen() {
         <NetWorthCard
           query={netWorth}
           onBreakdown={() => router.push('/net-worth')}
-          onUpdateBalance={() => {
-            setBalanceAccount(null);
-            setSheet('balance');
-          }}
+          onUpdateBalance={() => flows.openBalance(null)}
           onAccounts={() => scroll.current?.scrollTo({ y: accountsY.current - 12, animated: true })}
           onAddAccount={() => setSheet('addAccount')}
         />
@@ -297,10 +240,7 @@ export function TodayScreen() {
           <AccountsCard
             query={netWorth}
             onAdd={() => setSheet('addAccount')}
-            onOpen={(a) => {
-              setBalanceAccount(a.id);
-              setSheet('balance');
-            }}
+            onOpen={(a) => flows.openBalance(a.id)}
           />
         </View>
 
@@ -349,41 +289,21 @@ export function TodayScreen() {
                   })}
                 </View>
                 <Text style={{ fontSize: 13, color: COLORS.muted, marginTop: 12 }}>
-                  {DAY[selIdx]} Â· {formatRupees(totals[selIdx])} {selCount ? `${selCount} logged` : 'Nothing logged'}
+                  {DAY[selIdx]} · {formatRupees(totals[selIdx])} {selCount ? `${selCount} logged` : 'Nothing logged'}
                 </Text>
               </>
             )}
           </Card>
         </View>
 
-        <View style={{ gap: 12 }}>
-          <SectionHeader
-            title={isToday ? 'Today' : formatDate(selected)}
-            right={<Text style={{ fontSize: 14, color: COLORS.muted }}>{formatRupees(total(selected))} spent</Text>}
-          />
-          {spends.isPending ? (
-            <Card>
-              <Loading />
-            </Card>
-          ) : spends.isError ? (
-            <EmptyCard text={LOAD_ERROR} />
-          ) : daySpends.length === 0 ? (
-            <EmptyCard text={isToday ? 'Nothing logged yet.' : 'Nothing logged on this day. Tap + to add a spend for it.'} />
-          ) : (
-            <Card style={{ paddingVertical: 6 }}>
-              {daySpends.map((s) => (
-                <Row
-                  key={s.id}
-                  left={<CategoryIcon category={s.category} color={theme.accentText} />}
-                  title={s.description}
-                  subtitle={categoryLabel(s.category)}
-                  amount={formatRupees(s.amount_paise)}
-                  onPress={() => setDetail(spendDetail(s))}
-                />
-              ))}
-            </Card>
-          )}
-        </View>
+        <TodayTransactions
+          day={selected}
+          isToday={isToday}
+          accounts={accounts}
+          onOpen={flows.openTxn}
+          onAdd={() => openQuick(null)}
+          onViewAll={() => router.push('/transactions')}
+        />
 
         <View style={{ gap: 12 }}>
           <SectionHeader title="Upcoming" />
@@ -440,36 +360,15 @@ export function TodayScreen() {
       ) : null}
 
       <Fab onPress={() => openQuick(null)} accessibilityLabel="Log something" />
-      <Toast toast={toast} onDone={clearToast} />
-
-      <LogSpendSheet visible={sheet === 'log'} onClose={close} editing={editing} defaultDate={selected} />
       <KhataSheet visible={sheet === 'khata'} onClose={close} />
       <SubscriptionSheet visible={sheet === 'sub'} onClose={close} />
       <SubscriptionPromptSheet
         // iOS may not present two RN Modals at once, so the prompt waits for the others.
-        due={sheet || detail ? [] : prompt}
+        due={sheet || detail || flows.anyOpen ? [] : prompt}
         currentMonth={`${todayISO.slice(0, 8)}01`}
         onClose={() => setDismissed({ on: todayISO, keys: [...dismissedKeys, ...prompt.map(cycleKey)] })}
       />
       <AddAccountSheet visible={sheet === 'addAccount'} onClose={close} />
-      <QuickAddSheet
-        visible={sheet === 'quick'}
-        initial={quick.kind}
-        presetAccountId={quick.account}
-        accounts={netWorth.data?.accounts ?? []}
-        defaultDate={selected}
-        onClose={close}
-        onSaved={onSaved}
-        onLendBorrow={() => setSheet('khata')}
-        onSubscription={() => setSheet('sub')}
-      />
-      <UpdateBalanceSheet
-        visible={sheet === 'balance'}
-        onClose={close}
-        accounts={netWorth.data?.accounts ?? []}
-        initialAccountId={balanceAccount}
-        onAddExpense={() => openQuick('expense', balanceAccount)}
-      />
       <EntryDetailSheet
         visible={detail !== null}
         onClose={() => setDetail(null)}
@@ -478,6 +377,7 @@ export function TodayScreen() {
         onDelete={detail?.onDelete ?? (async () => {})}
         onEdit={detail?.onEdit}
       />
+      {flows.elements}
     </View>
   );
 }
