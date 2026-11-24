@@ -7,6 +7,10 @@
 --                    the old formula subtracted these a second time
 --   ok               ledger_balance = old_balance + double_counted
 -- Every row should say ok = true. Any false row: stop and investigate.
+--
+-- Run it after 010 and 011, BEFORE deploying the backend that writes to the
+-- ledger. Once the new backend has recorded Khata settlements or balance
+-- updates, the old formula no longer applies and false rows are expected.
 
 with anchor as (
   select s.user_id, s.bank_paise + s.cash_paise as typed,
@@ -72,5 +76,5 @@ select
     + (select count(*) from public.transactions where type = 'repayment_made' and legacy_spend_id is not null)
                                                                            as spends_in_ledger,
   (select count(*) from public.khata_entries)                              as khata_entries,
-  (select count(*) from public.transactions where type in ('lend', 'borrow') and source = 'migration')
+  (select count(*) from public.transactions where type in ('lend', 'borrow'))
                                                                            as khata_in_ledger;
