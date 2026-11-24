@@ -1,33 +1,48 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useRef, useState, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
-import { CategoryIcon, ClockIcon, EyeIcon, EyeOffIcon, RupeeIcon, SwapIcon } from '../components/icons';
-import { Card, EmptyCard, Fab, Row, ScreenHeader, SectionHeader, useProfileAvatar } from '../components/ui';
+import { CategoryIcon, ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
+import { Card, EmptyCard, Fab, Row, SectionHeader } from '../components/ui';
 import { categoryLabel } from '../categories';
-import { daysUntil, formatDate, formatDateTime, greeting, toISODate, weekDays, weekStartBack } from '../dates';
-import { usePrivacyStore, useRupees } from '../privacy';
-import { useDeleteSpend, useDeleteSubscription, useDueSubscriptions, useSpends, useSubscriptions, useSummary, useToday } from '../hooks';
+import { daysUntil, formatDate, formatDateTime, toISODate, weekDays, weekStartBack } from '../dates';
+import { useRupees } from '../privacy';
+import { useDeleteSpend, useDeleteSubscription, useDueSubscriptions, useNetWorth, useSpends, useSubscriptions, useToday } from '../hooks';
+import { AddAccountSheet } from '../sheets/AddAccountSheet';
 import { EntryDetailSheet } from '../sheets/EntryDetailSheet';
 import { KhataSheet } from '../sheets/KhataSheet';
 import { LogSpendSheet } from '../sheets/LogSpendSheet';
-import { StartingMoneySheet } from '../sheets/StartingMoneySheet';
 import { SubscriptionPromptSheet } from '../sheets/SubscriptionPromptSheet';
 import { SubscriptionSheet } from '../sheets/SubscriptionSheet';
+import { UpdateBalanceSheet } from '../sheets/UpdateBalanceSheet';
+import { AccountsCard } from '../today/AccountsCard';
+import { helloLine, shortDay } from '../today/model';
+import { NetWorthCard } from '../today/NetWorthCard';
+import { PastDateBanner, TodayHeader } from '../today/TodayHeader';
 import type { DueCycle, Spend } from '../types';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
-type SheetName = 'log' | 'khata' | 'sub' | 'start' | null;
+type SheetName = 'log' | 'khata' | 'sub' | 'addAccount' | 'balance' | null;
+/** Scrolled this far, the header collapses to a 56px bar (spec 4.1). */
+const COLLAPSE_AT = 150;
 type Detail = { title: string; lines: string[]; onDelete: () => Promise<void>; onEdit?: () => void };
 
 const DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const BAR_MAX = 64;
 const LOAD_ERROR = 'Could not load. Pull to refresh.';
-const MAX_WEEKS_BACK = 52;
 
 function weekTitle(weeksBack: number, monday: Date): string {
   if (weeksBack === 0) return 'This week';
@@ -51,8 +66,7 @@ function Loading() {
 export function TodayScreen() {
   // Masked while the eye toggle hides amounts.
   const formatRupees = useRupees();
-  const amountsHidden = usePrivacyStore((s) => s.hidden);
-  const toggleAmounts = usePrivacyStore((s) => s.toggle);
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useArchetypeTheme();
   const queryClient = useQueryClient();
@@ -76,12 +90,25 @@ export function TodayScreen() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const selected = selectedDay ?? (weeksBack === 0 ? todayISO : weekEnd);
   const [editing, setEditing] = useState<Spend | null>(null);
-  const changeWeek = (delta: number) => {
-    setWeeksBack((w) => Math.min(MAX_WEEKS_BACK, Math.max(0, w + delta)));
+  const changeWeek = (next: number) => {
+    setWeeksBack(next);
+    setSelectedDay(null);
+  };
+  const backToToday = () => {
+    setWeeksBack(0);
     setSelectedDay(null);
   };
 
-  const summary = useSummary();
+  // Net worth, its breakdown and the accounts card all read this one query.
+  const netWorth = useNetWorth(todayISO);
+  const [balanceAccount, setBalanceAccount] = useState<string | null>(null);
+  const scroll = useRef<ScrollView>(null);
+  const accountsY = useRef(0);
+  const [collapsed, setCollapsed] = useState(false);
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = e.nativeEvent.contentOffset.y > COLLAPSE_AT;
+    if (next !== collapsed) setCollapsed(next);
+  };
   const spends = useSpends(weekStart, weekEnd);
   const subs = useSubscriptions(todayISO);
   const due = useDueSubscriptions(todayISO);
@@ -99,8 +126,6 @@ export function TodayScreen() {
     }
   };
 
-  const first = fullName.split(/\s+/)[0];
-  const avatar = useProfileAvatar();
   const byDay = (iso: string) => (spends.data ?? []).filter((s) => s.spent_on === iso);
   const total = (iso: string) => byDay(iso).reduce((sum, s) => sum + s.amount_paise, 0);
   const totals = days.map((d) => total(toISODate(d)));
@@ -113,9 +138,6 @@ export function TodayScreen() {
     setSheet(null);
     setEditing(null);
   };
-  const nw = summary.data?.net_worth_paise ?? null;
-  const spentSince = summary.data?.spent_since_update_paise ?? 0;
-  const receivedSince = summary.data?.received_since_update_paise ?? 0;
   const spendDetail = (s: Spend): Detail => ({
     title: s.description,
     lines: [
@@ -171,63 +193,48 @@ export function TodayScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScrollView
+        ref={scroll}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingTop: insets.top + 16, paddingHorizontal: 24, paddingBottom: 120, gap: 20 }}
         keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
-        <ScreenHeader
-          eyebrow={greeting(new Date()) /* needs the hour; useToday only tracks the day */}
-          title={first ? `Hi, ${first}` : 'Hi there'}
-          {...avatar}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.accent} colors={[theme.accent]} />}>
+        <TodayHeader
+          today={now}
+          selected={selected}
+          weeksBack={weeksBack}
+          onSelect={setSelectedDay}
+          onWeeksBack={changeWeek}
         />
         {theme.slug ? (
-          <Text style={{ marginTop: -10, fontSize: 15, fontStyle: 'italic', color: theme.accentText, fontFamily: HEADING_FONT }}>
+          <Text style={{ marginTop: -6, fontSize: 15, fontStyle: 'italic', color: theme.accentText, fontFamily: HEADING_FONT }}>
             {theme.question}
           </Text>
         ) : null}
+        {isToday ? null : <PastDateBanner selected={selected} onBack={backToToday} />}
 
-        <LinearGradient
-          colors={theme.gradient}
-          start={{ x: 0, y: 1 }}
-          end={{ x: 1, y: 0 }}
-          style={{ borderRadius: 22, padding: 20, gap: 10 }}>
-          {summary.isPending ? (
-            <ActivityIndicator color={theme.linkOnDeep} />
-          ) : summary.isError ? (
-            <Text style={{ color: theme.onDeep, fontSize: 14 }}>{LOAD_ERROR}</Text>
-          ) : (
-            <>
-              {nw === null ? null : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 11, letterSpacing: 1.5, color: theme.onDeep }}>NET WORTH</Text>
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel={amountsHidden ? 'Show amounts' : 'Hide amounts'}
-                    onPress={toggleAmounts}
-                    hitSlop={12}>
-                    {amountsHidden ? <EyeOffIcon color={theme.onDeep} size={20} /> : <EyeIcon color={theme.onDeep} size={20} />}
-                  </TouchableOpacity>
-                </View>
-              )}
-              <Text style={{ fontSize: 24, color: COLORS.white, fontFamily: HEADING_FONT }}>
-                {nw === null ? 'Add your first financial details to see your full picture.' : formatRupees(nw)}
-              </Text>
-              {nw !== null && (spentSince > 0 || receivedSince > 0) ? (
-                <Text style={{ fontSize: 12, color: theme.onDeep }}>
-                  Since your last balance update:
-                  {spentSince > 0 ? ` ${formatRupees(spentSince)} spent` : ''}
-                  {spentSince > 0 && receivedSince > 0 ? ',' : ''}
-                  {receivedSince > 0 ? ` ${formatRupees(receivedSince)} received back` : ''}
-                </Text>
-              ) : null}
-              <TouchableOpacity accessibilityRole="button" onPress={() => setSheet('start')} activeOpacity={0.7}>
-                <Text style={{ color: theme.linkOnDeep, fontSize: 14, fontWeight: '600' }}>
-                  Update balance
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </LinearGradient>
+        <NetWorthCard
+          query={netWorth}
+          onBreakdown={() => router.push('/net-worth')}
+          onUpdateBalance={() => {
+            setBalanceAccount(null);
+            setSheet('balance');
+          }}
+          onAccounts={() => scroll.current?.scrollTo({ y: accountsY.current - 12, animated: true })}
+          onAddAccount={() => setSheet('addAccount')}
+        />
+
+        <View onLayout={(e) => (accountsY.current = e.nativeEvent.layout.y)}>
+          <AccountsCard
+            query={netWorth}
+            onAdd={() => setSheet('addAccount')}
+            onOpen={(a) => {
+              setBalanceAccount(a.id);
+              setSheet('balance');
+            }}
+          />
+        </View>
 
         <View style={{ gap: 12 }}>
           <SectionHeader title="Quick add" />
@@ -267,33 +274,7 @@ export function TodayScreen() {
         </View>
 
         <View style={{ gap: 12 }}>
-          <SectionHeader
-            title={weekTitle(weeksBack, monday)}
-            right={
-              <View style={{ flexDirection: 'row', gap: 4 }}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Previous week"
-                  accessibilityState={{ disabled: weeksBack >= MAX_WEEKS_BACK }}
-                  disabled={weeksBack >= MAX_WEEKS_BACK}
-                  onPress={() => changeWeek(1)}
-                  hitSlop={10}
-                  style={{ paddingHorizontal: 10, paddingVertical: 2 }}>
-                  <Text style={{ fontSize: 20, color: theme.accentText, fontWeight: '600' }}>‹</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Next week"
-                  accessibilityState={{ disabled: weeksBack === 0 }}
-                  disabled={weeksBack === 0}
-                  onPress={() => changeWeek(-1)}
-                  hitSlop={10}
-                  style={{ paddingHorizontal: 10, paddingVertical: 2, opacity: weeksBack === 0 ? 0.3 : 1 }}>
-                  <Text style={{ fontSize: 20, color: theme.accentText, fontWeight: '600' }}>›</Text>
-                </TouchableOpacity>
-              </View>
-            }
-          />
+          <SectionHeader title={weekTitle(weeksBack, monday)} />
           <Card>
             {spends.isPending ? (
               <Loading />
@@ -403,6 +384,30 @@ export function TodayScreen() {
         ) : null}
       </ScrollView>
 
+      {collapsed ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            paddingTop: insets.top,
+            backgroundColor: COLORS.background,
+            borderBottomWidth: 1,
+            borderBottomColor: COLORS.cardBorder,
+          }}>
+          <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24 }}>
+            <Text style={{ fontSize: 17, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>{helloLine(fullName)}</Text>
+            <Text style={{ fontSize: 13, color: COLORS.muted }}>{isToday ? 'Today' : shortDay(selected)}</Text>
+          </View>
+          {isToday ? null : (
+            <View style={{ paddingBottom: 8 }}>
+              <PastDateBanner selected={selected} onBack={backToToday} />
+            </View>
+          )}
+        </View>
+      ) : null}
+
       <Fab onPress={() => setSheet('log')} />
 
       <LogSpendSheet visible={sheet === 'log'} onClose={close} editing={editing} defaultDate={selected} />
@@ -414,11 +419,13 @@ export function TodayScreen() {
         currentMonth={`${todayISO.slice(0, 8)}01`}
         onClose={() => setDismissed({ on: todayISO, keys: [...dismissedKeys, ...prompt.map(cycleKey)] })}
       />
-      <StartingMoneySheet
-        visible={sheet === 'start'}
+      <AddAccountSheet visible={sheet === 'addAccount'} onClose={close} />
+      <UpdateBalanceSheet
+        visible={sheet === 'balance'}
         onClose={close}
-        initial={summary.data?.starting_money ?? null}
-        balanceNow={summary.data?.balance_paise ?? null}
+        accounts={netWorth.data?.accounts ?? []}
+        initialAccountId={balanceAccount}
+        onAddExpense={() => setSheet('log')}
       />
       <EntryDetailSheet
         visible={detail !== null}

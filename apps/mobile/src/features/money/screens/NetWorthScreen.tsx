@@ -3,12 +3,15 @@ import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
-import { Card, EmptyCard, Row, ScreenScroll } from '../components/ui';
+import { EyeIcon, EyeOffIcon } from '../components/icons';
+import { Card, ScreenScroll } from '../components/ui';
 import { Sparkline } from '../components/Sparkline';
 import { toISODate } from '../dates';
 import { countPoints } from '../chart';
-import { useRupees } from '../privacy';
-import { useSummary, useToday, useTrend } from '../hooks';
+import { usePrivacyStore, useRupees } from '../privacy';
+import { useNetWorth, useToday, useTrend } from '../hooks';
+import { breakdown, changeLine, netWorthSentence } from '../today/model';
+import { CardError, Eyebrow, Skeleton, TodayCard } from '../today/parts';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 function Dot({ color, label }: { color: string; label: string }) {
@@ -33,68 +36,79 @@ function NetWorthBody() {
   const formatRupees = useRupees();
   const theme = useArchetypeTheme();
   const router = useRouter();
-  const summary = useSummary();
-  const trend = useTrend(toISODate(useToday()));
+  const hidden = usePrivacyStore((st) => st.hidden);
+  const toggle = usePrivacyStore((st) => st.toggle);
+  const todayISO = toISODate(useToday());
+  const netWorth = useNetWorth(todayISO);
+  const trend = useTrend(todayISO);
 
-  const s = summary.data;
-  const start = s?.starting_money;
+  const nw = netWorth.data;
   const points = trend.data ?? [];
   const known = countPoints(points.map((p) => p.balance_paise));
+  const change = nw ? changeLine(nw.change_this_month_paise, formatRupees) : null;
+  const table = nw ? breakdown(nw, nw.accounts) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScreenScroll>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            onPress={() => (router.canGoBack() ? router.back() : router.replace('/today'))}
-            hitSlop={8}
-            style={{ alignSelf: 'flex-start' }}>
-            <Text style={{ fontSize: 16, color: theme.accentText, fontWeight: '600' }}>Back</Text>
-          </TouchableOpacity>
-          <View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/today'))}
+              hitSlop={8}
+              style={{ minHeight: 44, justifyContent: 'center' }}>
+              <Text style={{ fontSize: 16, color: theme.accentText, fontWeight: '600' }}>‹ Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={hidden ? 'Show amounts' : 'Hide amounts'}
+              onPress={toggle}
+              hitSlop={12}
+              style={{ minWidth: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+              {hidden ? <EyeOffIcon color={theme.accentText} size={20} /> : <EyeIcon color={theme.accentText} size={20} />}
+            </TouchableOpacity>
+          </View>
+          <View accessible accessibilityLabel={nw ? netWorthSentence(nw, formatRupees) : 'Net worth'}>
             <Text style={{ fontSize: 14, color: COLORS.muted }}>Net worth</Text>
-            <Text style={{ fontSize: 34, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>
-              {s?.net_worth_paise != null ? formatRupees(s.net_worth_paise) : '—'}
+            <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 40, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>
+              {nw ? formatRupees(nw.net_worth_paise) : '—'}
             </Text>
+            {change ? <Text style={{ fontSize: 12.5, color: COLORS.muted }}>{change.text}</Text> : null}
           </View>
 
-          {summary.isError ? (
-            <EmptyCard text="Could not load your balances." />
-          ) : summary.isLoading ? (
-            <Card>
-              <ActivityIndicator color={theme.accent} />
-            </Card>
+          {!table ? (
+            <TodayCard title="Breakdown">
+              {netWorth.isError ? (
+                <CardError message="Couldn't load your breakdown." onRetry={() => void netWorth.refetch()} />
+              ) : (
+                <Skeleton lines={[{ width: '100%', height: 20 }, { width: '100%', height: 20 }, { width: '100%', height: 20 }]} />
+              )}
+            </TodayCard>
           ) : (
-            <Card>
-              <Row title="Bank" amount={start ? formatRupees(start.bank_paise) : '—'} />
-              <Row title="Cash" amount={start ? formatRupees(start.cash_paise) : '—'} />
-              {s && s.received_since_update_paise > 0 ? (
-                <Row
-                  title="Received back"
-                  subtitle="Khata money paid back to you since your last update"
-                  amount={formatRupees(s.received_since_update_paise)}
-                />
-              ) : null}
-              {s && s.spent_since_update_paise > 0 ? (
-                <Row
-                  title="Spent since last update"
-                  subtitle="Logged after you last set your balance"
-                  amount={formatRupees(-s.spent_since_update_paise)}
-                />
-              ) : null}
-            </Card>
+            <>
+              <TodayCard title={<Eyebrow>ASSETS</Eyebrow>}>
+                {table.assets.map((r) => (
+                  <Line key={r.label} label={r.label} amount={formatRupees(r.paise)} />
+                ))}
+                <Line label="Total assets" amount={formatRupees(table.totalAssets)} strong />
+              </TodayCard>
+              <TodayCard title={<Eyebrow>LIABILITIES</Eyebrow>}>
+                {table.liabilities.map((r) => (
+                  <Line key={r.label} label={r.label} amount={formatRupees(r.paise)} />
+                ))}
+                <Line label="Total liabilities" amount={formatRupees(table.totalLiabilities)} strong />
+              </TodayCard>
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 13, color: COLORS.text, fontWeight: '600' }}>
+                  Net worth = Total assets − Total liabilities
+                </Text>
+                <Text style={{ fontSize: 12, color: COLORS.muted }}>
+                  Moving money between your own accounts doesn't change net worth. Investments will be added later.
+                </Text>
+              </View>
+            </>
           )}
-
-          {s && (s.owed_to_you_paise > 0 || s.you_owe_paise > 0) ? (
-            <Card>
-              <Text style={{ fontSize: 13, color: COLORS.muted, marginBottom: 4 }}>
-                Money owed to you counts as yours, and money you owe is taken off your net worth.
-              </Text>
-              <Row title="Owed to you" amount={formatRupees(s.owed_to_you_paise)} />
-              <Row title="You owe" amount={formatRupees(s.you_owe_paise)} />
-            </Card>
-          ) : null}
 
           <Card>
             <Text style={{ fontSize: 16, color: COLORS.text, fontFamily: HEADING_FONT, marginBottom: 12 }}>
@@ -106,7 +120,7 @@ function NetWorthBody() {
               <ActivityIndicator color={theme.accent} />
             ) : known === 0 ? (
               <Text style={{ color: COLORS.muted, fontSize: 14 }}>
-                Set your balance to see how it moves over time.
+                Add an account to see how your balance moves over time.
               </Text>
             ) : (
               <>
@@ -124,6 +138,24 @@ function NetWorthBody() {
             )}
           </Card>
       </ScreenScroll>
+    </View>
+  );
+}
+
+function Line({ label, amount, strong }: { label: string; amount: string; strong?: boolean }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        minHeight: 32,
+        alignItems: 'center',
+        borderTopWidth: strong ? 1 : 0,
+        borderTopColor: COLORS.cardBorder,
+        paddingTop: strong ? 8 : 0,
+      }}>
+      <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: strong ? '700' : '500' }}>{label}</Text>
+      <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: strong ? '700' : '600' }}>{amount}</Text>
     </View>
   );
 }

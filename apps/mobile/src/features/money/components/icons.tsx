@@ -87,6 +87,19 @@ export const ClockIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const CalendarIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM4 10h16M8 4v4M16 4v4" />
+  </Icon>
+);
+
+/** A wallet: accounts and the "Where does your money stand?" empty state. */
+export const WalletIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M4 7a2 2 0 0 1 2-2h11v4M4 7v10a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1V10a1 1 0 0 0-1-1H6a2 2 0 0 1-2-2zM16 14h1" />
+  </Icon>
+);
+
 const CATEGORY_PATHS: Record<CategorySlug, string> = {
   food: 'M7 3v7a2 2 0 0 0 4 0V3M9 10v11M17 3c-2 2-3 5-3 8h3v10',
   groceries: 'M3 4h3l2 11h10l2-8H7M10 20h.01M17 20h.01',
