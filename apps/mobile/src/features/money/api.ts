@@ -1,6 +1,7 @@
 import { deviceTimeZone } from '@/features/money/dates';
 import { api } from '@/lib/api';
 import type {
+  Account,
   CycleAnswer,
   PaymentMethod,
   DueCycle,
@@ -58,9 +59,15 @@ export async function addKhata(input: KhataInput): Promise<KhataEntry> {
   return result.data;
 }
 
-/** Settles an entry. For money you borrowed, `method` says how you paid it back. */
+/** Settles an entry. `method` says how the money moved: cash uses Cash, UPI the bank account. */
 export async function settleKhata({ id, method }: { id: string; method?: PaymentMethod }): Promise<void> {
   await api.post(`/money/khata/${id}/settle`, method ? { method } : {});
+}
+
+/** Open accounts with today's balance, largest first, cash last, cards after. */
+export async function fetchAccounts(today: string): Promise<Account[]> {
+  const result = await api.get<Account[]>('/money/accounts', { params: { today } });
+  return result.data;
 }
 
 export async function deleteKhata(id: string): Promise<void> {

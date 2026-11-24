@@ -89,7 +89,7 @@ function NetWorthBody() {
           {s && (s.owed_to_you_paise > 0 || s.you_owe_paise > 0) ? (
             <Card>
               <Text style={{ fontSize: 13, color: COLORS.muted, marginBottom: 4 }}>
-                Khata is a record. These count once you mark them settled.
+                Money owed to you counts as yours, and money you owe is taken off your net worth.
               </Text>
               <Row title="Owed to you" amount={formatRupees(s.owed_to_you_paise)} />
               <Row title="You owe" amount={formatRupees(s.you_owe_paise)} />

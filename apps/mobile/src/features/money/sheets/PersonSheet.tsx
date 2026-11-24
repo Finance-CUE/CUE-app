@@ -45,16 +45,15 @@ export function PersonSheet({
     }
   };
 
-  // Paying back a debt is a real payment, logged as a spend; ask how it was paid first.
+  // Settling moves real money either way: ask how, so it lands in Cash or the bank.
   const markSettled = (e: KhataEntry) => {
-    if (e.direction === 'lent') {
-      void act(() => settle.mutateAsync({ id: e.id }));
-      return;
-    }
     const pay = (method: PaymentMethod) => void act(() => settle.mutateAsync({ id: e.id, method }));
+    const lent = e.direction === 'lent';
     Alert.alert(
-      `How did you pay ${e.person} back?`,
-      `${formatRupees(e.amount_paise)} will be logged as a payment and taken off your balance.`,
+      lent ? `How did ${e.person} pay you back?` : `How did you pay ${e.person} back?`,
+      lent
+        ? `${formatRupees(e.amount_paise)} will be added back to your cash or bank balance.`
+        : `${formatRupees(e.amount_paise)} will be taken from your cash or bank balance.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Cash', onPress: () => pay('cash') },

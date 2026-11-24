@@ -102,6 +102,22 @@ export type KhataInput = {
   person: string;
   amount_paise: number;
   note?: string | null;
+  /** The account chip: where the money left (lent) or arrived (borrowed). */
+  account_id?: string;
+  /** Makes a retry return the same entry instead of saving a second one. */
+  client_key?: string;
+};
+export type AccountKind = 'savings' | 'current' | 'cash' | 'credit_card' | 'other';
+export type Account = {
+  id: string;
+  name: string;
+  kind: AccountKind;
+  bank: string | null;
+  icon: string | null;
+  archived: boolean;
+  /** Negative for a card with money due; null before its "Balance on" date. */
+  balance_paise: number | null;
+  created_at: string;
 };
 export type SubscriptionInput = {
   name: string;

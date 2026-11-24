@@ -32,6 +32,13 @@ export const useSpends = (start: string, end: string) =>
 export const useSummary = (enabled = true) =>
   useQuery({ queryKey: ['money', 'summary'], queryFn: moneyApi.fetchSummary, enabled });
 
+export const useAccounts = (today: string, enabled = true) =>
+  useQuery({
+    queryKey: ['money', 'accounts', today],
+    queryFn: () => moneyApi.fetchAccounts(today),
+    enabled,
+  });
+
 export const useKhata = () =>
   useQuery({ queryKey: ['money', 'khata'], queryFn: moneyApi.fetchKhata });
 

@@ -4,9 +4,11 @@ import { Alert, Platform, Text } from 'react-native';
 
 import { COLORS } from '@/features/assessment/theme';
 
+import { defaultKhataAccount, khataAccounts, newClientKey } from '@/features/money/accounts';
 import { ChipRow, PrimaryButton, SecondaryButton, TextField } from '@/features/money/components/ui';
+import { toISODate } from '@/features/money/dates';
 import { formatRupees, parseRupeesToPaise } from '@/features/money/format';
-import { useAddKhata, useSummary } from '@/features/money/hooks';
+import { useAccounts, useAddKhata, useSummary, useToday } from '@/features/money/hooks';
 import type { Direction } from '@/features/money/types';
 import { FormError, Sheet, useGuardedSubmit } from './Sheet';
 
@@ -26,6 +28,13 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const balance = summary?.balance_paise ?? null;
   const owedAlready = summary?.you_owe_paise ?? 0;
   const { run, error } = useGuardedSubmit(visible);
+  // Account chip (spec P0): where the money left or arrived. Defaults to Cash.
+  const accounts = useAccounts(toISODate(useToday()), visible).data ?? [];
+  const offered = khataAccounts(accounts);
+  const [picked, setPicked] = useState<string | null>(null);
+  const accountId = offered.some((a) => a.id === picked) ? picked : defaultKhataAccount(accounts);
+  // One key per entry: a retried save returns the same entry instead of a second one.
+  const [clientKey, setClientKey] = useState(newClientKey);
 
   const paise = parseRupeesToPaise(amount);
   const name = person.trim();
@@ -70,13 +79,23 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const save = () => {
     if (!valid || paise === null) return;
     void run(
-      () => mutation.mutateAsync({ direction, person: name, amount_paise: paise, note: note.trim() || null }),
+      () =>
+        mutation.mutateAsync({
+          direction,
+          person: name,
+          amount_paise: paise,
+          note: note.trim() || null,
+          client_key: clientKey,
+          ...(accountId ? { account_id: accountId } : {}),
+        }),
       () => {
         setDirection('lent');
         setPerson('');
         setAmount('');
         setNote('');
         setContactsNote(null);
+        setPicked(null);
+        setClientKey(newClientKey());
         onClose();
       },
     );
@@ -89,6 +108,18 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
       <SecondaryButton label="Pick from contacts" onPress={() => void pickContact()} />
       {contactsNote ? <Text style={{ fontSize: 13, color: COLORS.muted }}>{contactsNote}</Text> : null}
       <TextField label="Amount" value={amount} onChangeText={setAmount} prefix="₹" keyboardType="decimal-pad" />
+      {offered.length > 0 ? (
+        <>
+          <Text style={{ fontSize: 13, color: COLORS.muted }}>
+            {direction === 'lent' ? 'Paid from' : 'Received in'}
+          </Text>
+          <ChipRow
+            options={offered.map((a) => ({ value: a.id, label: a.name }))}
+            value={accountId}
+            onChange={setPicked}
+          />
+        </>
+      ) : null}
       <TextField label="Note (optional)" value={note} onChangeText={setNote} maxLength={120} />
       <FormError message={error} />
       <PrimaryButton label="Save" onPress={submit} disabled={!valid || mutation.isPending} loading={mutation.isPending} />
