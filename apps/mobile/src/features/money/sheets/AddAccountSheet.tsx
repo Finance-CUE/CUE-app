@@ -3,6 +3,8 @@ import { Text } from 'react-native';
 
 import { COLORS } from '@/features/assessment/theme';
 import { newClientKey } from '@/features/money/accounts';
+import { type Bank, suggestNickname } from '@/features/money/banks';
+import { BankPicker } from './BankPicker';
 import { ChipRow, PrimaryButton, TextField } from '@/features/money/components/ui';
 import { daysBefore, parseDisplayDate, toDisplayDate, toISODate } from '@/features/money/dates';
 import { parseRupeesToPaise } from '@/features/money/format';
@@ -39,8 +41,10 @@ export function balanceOnProblem(iso: string | null, today: Date): string | null
  * credentials are asked for. The opening balance is not income.
  */
 export function AddAccountSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const [name, setName] = useState('');
+  // null = not typed yet, so the nickname follows the bank and type ("HDFC Savings").
+  const [name, setName] = useState<string | null>(null);
   const [kind, setKind] = useState<AccountKind>('savings');
+  const [bank, setBank] = useState<Bank | null>(null);
   const [amount, setAmount] = useState('');
   const [dateChoice, setDateChoice] = useState<DateChoice>('today');
   const [otherDate, setOtherDate] = useState('');
@@ -50,8 +54,9 @@ export function AddAccountSheet({ visible, onClose }: { visible: boolean; onClos
 
   useEffect(() => {
     if (!visible) return;
-    setName('');
+    setName(null);
     setKind('savings');
+    setBank(null);
     setAmount('');
     setDateChoice('today');
     setOtherDate(toDisplayDate(toISODate(new Date())));
@@ -64,7 +69,10 @@ export function AddAccountSheet({ visible, onClose }: { visible: boolean; onClos
   const balanceOn =
     dateChoice === 'today' ? toISODate(today) : dateChoice === 'yesterday' ? daysBefore(today, 1) : parseDisplayDate(otherDate);
   const dateProblem = balanceOnProblem(balanceOn, today);
-  const nickname = name.trim();
+  const cash = kind === 'cash';
+  const shownName = name ?? suggestNickname(cash ? undefined : (bank ?? undefined), kind);
+  const nickname = shownName.trim();
+  const bankSlug = !cash && bank && bank.slug !== 'other' ? bank.slug : undefined;
   const valid = nickname.length >= 1 && nickname.length <= 40 && paise !== null && paise >= 0 && dateProblem === null;
 
   const submit = () => {
@@ -76,6 +84,7 @@ export function AddAccountSheet({ visible, onClose }: { visible: boolean; onClos
           client_key: clientKey,
           name: nickname,
           kind,
+          ...(bankSlug ? { bank: bankSlug } : {}),
           opening_paise: paise,
           balance_on: balanceOn,
         }),
@@ -85,8 +94,9 @@ export function AddAccountSheet({ visible, onClose }: { visible: boolean; onClos
 
   return (
     <Sheet visible={visible} onClose={onClose} title="Add account" subtitle="No bank login needed. Just the balance.">
-      <TextField label="Nickname" value={name} onChangeText={setName} placeholder="HDFC Savings" maxLength={40} />
       <ChipRow options={KINDS} value={kind} onChange={setKind} />
+      {cash ? null : <BankPicker value={bank?.slug ?? null} onChange={setBank} />}
+      <TextField label="Nickname" value={shownName} onChangeText={setName} placeholder="HDFC Savings" maxLength={40} />
       <TextField
         label={card ? 'Amount due on the card' : 'Balance'}
         value={amount}

@@ -2,7 +2,9 @@ import { deviceTimeZone } from '@/features/money/dates';
 import { api } from '@/lib/api';
 import type {
   Account,
+  AccountDetail,
   AccountInput,
+  AccountUpdate,
   AdjustInput,
   EntryInput,
   EntryUpdate,
@@ -17,8 +19,6 @@ import type {
   Nudges,
   PlannedNudge,
   Spend,
-  StartingMoney,
-  StartingMoneyInput,
   Subscription,
   SubscriptionInput,
   TrendPoint,
@@ -31,11 +31,6 @@ export async function fetchSpends(start: string, end: string): Promise<Spend[]> 
 
 export async function fetchSummary(): Promise<MoneySummary> {
   const result = await api.get<MoneySummary>('/money/summary');
-  return result.data;
-}
-
-export async function putStartingMoney(input: StartingMoneyInput): Promise<StartingMoney> {
-  const result = await api.put<StartingMoney>('/money/starting-money', input);
   return result.data;
 }
 
@@ -58,6 +53,22 @@ export async function settleKhata({ id, method }: { id: string; method?: Payment
 export async function fetchAccounts(today: string): Promise<Account[]> {
   const result = await api.get<Account[]>('/money/accounts', { params: { today } });
   return result.data;
+}
+
+/** The account screen: balance, this month's in and out, six months of history. */
+export async function fetchAccountDetail(id: string, today: string): Promise<AccountDetail> {
+  const result = await api.get<AccountDetail>(`/money/accounts/${id}`, { params: { today } });
+  return result.data;
+}
+
+export async function updateAccount({ id, today, ...input }: AccountUpdate & { id: string; today: string }): Promise<Account> {
+  const result = await api.patch<Account>(`/money/accounts/${id}`, input, { params: { today } });
+  return result.data;
+}
+
+/** Only at ₹0; the server refuses otherwise (409) with the reason. */
+export async function archiveAccount({ id, today }: { id: string; today: string }): Promise<void> {
+  await api.post(`/money/accounts/${id}/archive`, undefined, { params: { today } });
 }
 
 export async function addAccount({ today, ...input }: AccountInput & { today: string }): Promise<Account> {

@@ -23,11 +23,14 @@ export function UpdateBalanceSheet({
   accounts,
   initialAccountId,
   onAddExpense,
+  reconcile = false,
 }: {
   visible: boolean;
   onClose: () => void;
   accounts: Account[];
   initialAccountId?: string | null;
+  /** Reconcile (account screen): the same adjustment, framed as checking against a statement. */
+  reconcile?: boolean;
   /** "Add it as an expense instead": the caller opens the expense form. */
   onAddExpense: () => void;
 }) {
@@ -76,7 +79,15 @@ export function UpdateBalanceSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Update balance" subtitle="Match CUE to what your bank shows.">
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      title={reconcile ? 'Reconcile' : 'Update balance'}
+      subtitle={
+        reconcile
+          ? `CUE shows ${account ? formatRupees(Math.abs(account.balance_paise ?? 0)) : '—'}${card ? ' due' : ''}. Enter what your statement says.`
+          : 'Match CUE to what your bank shows.'
+      }>
       <ChipRow
         options={accounts.map((a) => ({ value: a.id, label: a.name }))}
         value={accountId}

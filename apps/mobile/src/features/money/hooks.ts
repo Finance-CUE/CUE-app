@@ -39,6 +39,12 @@ export const useAccounts = (today: string, enabled = true) =>
     enabled,
   });
 
+export const useAccountDetail = (id: string, today: string) =>
+  useQuery({
+    queryKey: ['money', 'account', id, today],
+    queryFn: () => moneyApi.fetchAccountDetail(id, today),
+  });
+
 export const useNetWorth = (today: string) =>
   useQuery({ queryKey: ['money', 'net-worth', today], queryFn: () => moneyApi.fetchNetWorth(today) });
 
@@ -98,9 +104,10 @@ function useMoneyMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>) {
   });
 }
 
-export const useSetStartingMoney = () => useMoneyMutation(moneyApi.putStartingMoney);
 export const useAddKhata = () => useMoneyMutation(moneyApi.addKhata);
 export const useAddAccount = () => useMoneyMutation(moneyApi.addAccount);
+export const useUpdateAccount = () => useMoneyMutation(moneyApi.updateAccount);
+export const useArchiveAccount = () => useMoneyMutation(moneyApi.archiveAccount);
 export const useAdjustBalance = () => useMoneyMutation(moneyApi.adjustBalance);
 export const useAddTransaction = () => useMoneyMutation(moneyApi.addTransaction);
 export const useDeleteTransaction = () => useMoneyMutation(moneyApi.deleteTransaction);

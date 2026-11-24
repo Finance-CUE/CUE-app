@@ -136,10 +136,21 @@ export type LedgerTxn = {
   created_at: string;
   deleted: boolean;
 };
+/** GET /money/accounts/{id}: the account screen. */
+export type AccountDetail = {
+  account: Account;
+  money_in_this_month_paise: number;
+  money_out_this_month_paise: number;
+  /** Newest first; closing is null before the "Balance on" date. */
+  months: { month: string; money_in_paise: number; money_out_paise: number; closing_paise: number | null }[];
+};
+export type AccountUpdate = { name: string; bank: string | null };
 export type AccountInput = {
   client_key: string;
   name: string;
   kind: AccountKind;
+  /** Bank slug from banks.ts; omitted for cash or "Other". */
+  bank?: string;
   /** For a credit card, the amount due on balance_on. */
   opening_paise: number;
   balance_on: string;
@@ -193,4 +204,3 @@ export type SubscriptionInput = {
 };
 export type PaymentMethod = 'cash' | 'upi';
 export type CycleAnswer = { month: string; active: boolean };
-export type StartingMoneyInput = { bank_paise: number; cash_paise: number };

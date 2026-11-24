@@ -41,12 +41,13 @@ function HistoryBody() {
   const theme = useArchetypeTheme();
   const insets = useSafeAreaInsets();
   const formatRupees = useRupees();
-  const { search } = useLocalSearchParams<{ search?: string }>();
+  // ?search=1 focuses the field (Today's Search chip); ?account= starts filtered (account screen).
+  const { search, account } = useLocalSearchParams<{ search?: string; account?: string }>();
   const today = useToday();
   const todayISO = toISODate(today);
   const [range, setRange] = useState<Range>('30');
   const [type, setType] = useState<TypeFilter>('all');
-  const [accountId, setAccountId] = useState<string | null>(null);
+  const [accountId, setAccountId] = useState<string | null>(account ?? null);
   const [category, setCategory] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);

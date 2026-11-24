@@ -17,7 +17,7 @@ import { canDuplicate, deleteQuestion, isDeletable, isEditable, rowFor } from '.
 type Open =
   | { name: 'quick'; kind: QuickAddChoice; account: string | null; seed: Seed | null }
   | { name: 'detail'; txn: LedgerTxn }
-  | { name: 'balance'; account: string | null }
+  | { name: 'balance'; account: string | null; reconcile: boolean }
   | null;
 
 /**
@@ -52,7 +52,7 @@ export function useTxnFlows({
     setDeleteError(null);
     setOpen({ name: 'detail', txn });
   };
-  const openBalance = (account: string | null) => setOpen({ name: 'balance', account });
+  const openBalance = (account: string | null, reconcile = false) => setOpen({ name: 'balance', account, reconcile });
 
   // "Expense saved · Undo", plus the low-balance note when an account went below ₹0.
   const onSaved = ({ txn, kind, lowNote, accountId, edited }: Saved) =>
@@ -124,6 +124,7 @@ export function useTxnFlows({
         onClose={close}
         accounts={accounts}
         initialAccountId={open?.name === 'balance' ? open.account : null}
+        reconcile={open?.name === 'balance' && open.reconcile}
         onAddExpense={() => openQuick('expense', open?.name === 'balance' ? open.account : null)}
       />
       <Toast toast={toast} onDone={clearToast} />
