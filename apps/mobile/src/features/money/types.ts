@@ -84,19 +84,6 @@ export type PlannedNudge = {
   fire_at: string;
 };
 
-export type SpendInput = {
-  description: string;
-  amount_paise: number;
-  category: Category;
-  spent_on: string;
-  billing_day?: number;
-};
-export type SpendUpdate = {
-  description: string;
-  amount_paise: number;
-  category: Exclude<Category, 'subscription'>;
-  spent_on: string;
-};
 export type KhataInput = {
   direction: Direction;
   person: string;
@@ -167,6 +154,16 @@ export type EntryInput = {
   category?: string;
   description?: string;
   note?: string;
+  occurred_on: string;
+};
+/** PATCH /money/transactions/{id}: every field is sent; the type never changes. */
+export type EntryUpdate = {
+  amount_paise: number;
+  account_id: string;
+  to_account_id: string | null;
+  category: string | null;
+  description: string | null;
+  note: string | null;
   occurred_on: string;
 };
 export type AdjustInput = {

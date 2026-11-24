@@ -98,15 +98,14 @@ function useMoneyMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>) {
   });
 }
 
-export const useLogSpend = () => useMoneyMutation(moneyApi.logSpend);
-export const useUpdateSpend = () => useMoneyMutation(moneyApi.updateSpend);
-export const useDeleteSpend = () => useMoneyMutation(moneyApi.deleteSpend);
 export const useSetStartingMoney = () => useMoneyMutation(moneyApi.putStartingMoney);
 export const useAddKhata = () => useMoneyMutation(moneyApi.addKhata);
 export const useAddAccount = () => useMoneyMutation(moneyApi.addAccount);
 export const useAdjustBalance = () => useMoneyMutation(moneyApi.adjustBalance);
 export const useAddTransaction = () => useMoneyMutation(moneyApi.addTransaction);
 export const useDeleteTransaction = () => useMoneyMutation(moneyApi.deleteTransaction);
+export const useUpdateTransaction = () => useMoneyMutation(moneyApi.updateTransaction);
+export const useRestoreTransaction = () => useMoneyMutation(moneyApi.restoreTransaction);
 export const useSettleKhata = () => useMoneyMutation(moneyApi.settleKhata);
 export const useDeleteKhata = () => useMoneyMutation(moneyApi.deleteKhata);
 export const useAddSubscription = () => useMoneyMutation(moneyApi.addSubscription);

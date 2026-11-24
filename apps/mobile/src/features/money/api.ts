@@ -5,6 +5,7 @@ import type {
   AccountInput,
   AdjustInput,
   EntryInput,
+  EntryUpdate,
   LedgerTxn,
   NetWorth,
   CycleAnswer,
@@ -16,8 +17,6 @@ import type {
   Nudges,
   PlannedNudge,
   Spend,
-  SpendInput,
-  SpendUpdate,
   StartingMoney,
   StartingMoneyInput,
   Subscription,
@@ -28,20 +27,6 @@ import type {
 export async function fetchSpends(start: string, end: string): Promise<Spend[]> {
   const result = await api.get<Spend[]>('/money/spends', { params: { start, end } });
   return result.data;
-}
-
-export async function logSpend(input: SpendInput): Promise<Spend> {
-  const result = await api.post<Spend>('/money/spends', input);
-  return result.data;
-}
-
-export async function updateSpend({ id, ...input }: SpendUpdate & { id: string }): Promise<Spend> {
-  const result = await api.patch<Spend>(`/money/spends/${id}`, input);
-  return result.data;
-}
-
-export async function deleteSpend(id: string): Promise<void> {
-  await api.delete(`/money/spends/${id}`);
 }
 
 export async function fetchSummary(): Promise<MoneySummary> {
@@ -99,6 +84,18 @@ export async function fetchNetWorth(today: string): Promise<NetWorth> {
 /** Quick Add. A retry with the same client key returns the entry already saved. */
 export async function addTransaction(input: EntryInput): Promise<LedgerTxn> {
   const result = await api.post<LedgerTxn>('/money/transactions', input);
+  return result.data;
+}
+
+/** Edit any date; a new date or account moves the entry's effect on the server. */
+export async function updateTransaction({ id, ...input }: EntryUpdate & { id: string }): Promise<LedgerTxn> {
+  const result = await api.patch<LedgerTxn>(`/money/transactions/${id}`, input);
+  return result.data;
+}
+
+/** Undo a delete. */
+export async function restoreTransaction(id: string): Promise<LedgerTxn> {
+  const result = await api.post<LedgerTxn>(`/money/transactions/${id}/restore`);
   return result.data;
 }
 

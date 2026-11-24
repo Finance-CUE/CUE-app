@@ -4,8 +4,14 @@ import { PrimaryButton, TextField } from '@/features/money/components/ui';
 import { toISODate } from '@/features/money/dates';
 import { parseRupeesToPaise } from '@/features/money/format';
 import { useAddSubscription } from '@/features/money/hooks';
-import { parseBillingDay } from './LogSpendSheet';
 import { FormError, Sheet, useGuardedSubmit } from './Sheet';
+
+/** Integer 1-31 or null. */
+export const parseBillingDay = (text: string): number | null => {
+  if (!/^\d{1,2}$/.test(text.trim())) return null;
+  const n = Number(text);
+  return n >= 1 && n <= 31 ? n : null;
+};
 
 export function SubscriptionSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [name, setName] = useState('');
