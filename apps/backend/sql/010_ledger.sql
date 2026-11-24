@@ -40,7 +40,10 @@ create table if not exists public.accounts (
   icon        text        check (icon is null or char_length(icon) <= 40),
   -- Archived only at a zero balance (suggestion 15); the backend enforces that.
   archived_at timestamptz,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  -- Lets transactions reference (account, user) so an entry can only ever
+  -- point at the same user's account.
+  unique (id, user_id)
 );
 
 create index if not exists accounts_user_idx on public.accounts (user_id);
@@ -50,6 +53,17 @@ create unique index if not exists accounts_user_name_active_uidx
 
 
 -- 2. Transactions -------------------------------------------------------------
+
+-- Same (id, user) key on Khata entries, for the same reason.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.khata_entries'::regclass and conname = 'khata_entries_id_user_key'
+  ) then
+    alter table public.khata_entries add constraint khata_entries_id_user_key unique (id, user_id);
+  end if;
+end $$;
 
 create table if not exists public.transactions (
   id             uuid        primary key default gen_random_uuid(),
@@ -61,18 +75,18 @@ create table if not exists public.transactions (
                    'lend', 'borrow', 'repayment_received', 'repayment_made'
                  )),
   amount_paise   bigint      not null check (abs(amount_paise) <= 10000000000),
-  account_id     uuid        references public.accounts (id) on delete restrict,
+  account_id     uuid,
   -- Transfers only: the account the money went to.
-  to_account_id  uuid        references public.accounts (id) on delete restrict,
+  to_account_id  uuid,
   category       text,
   description    text        check (description is null or char_length(btrim(description)) between 1 and 80),
   note           text        check (note is null or char_length(note) <= 120),
   -- Adjustments: why the balance was corrected.
   reason         text        check (reason is null or char_length(reason) <= 120),
   -- Lend, borrow and repayments: the Khata person record.
-  khata_entry_id uuid        references public.khata_entries (id) on delete cascade,
+  khata_entry_id uuid,
   -- Refunds: the expense being refunded, when known (suggestion 26).
-  refund_of      uuid        references public.transactions (id) on delete set null,
+  refund_of      uuid,
   occurred_on    date        not null,
   source         text        not null default 'app' check (source in ('app', 'migration')),
   -- The spend this row was copied from, so old endpoints and subscription
@@ -84,6 +98,17 @@ create table if not exists public.transactions (
   updated_at     timestamptz not null default now(),
 
   unique (user_id, client_key),
+  unique (id, user_id),
+
+  -- Every reference is to the same user's row (MATCH SIMPLE: a null id skips the check).
+  constraint transactions_account_fk foreign key (account_id, user_id)
+    references public.accounts (id, user_id) on delete restrict,
+  constraint transactions_to_account_fk foreign key (to_account_id, user_id)
+    references public.accounts (id, user_id) on delete restrict,
+  constraint transactions_khata_fk foreign key (khata_entry_id, user_id)
+    references public.khata_entries (id, user_id) on delete cascade,
+  constraint transactions_refund_fk foreign key (refund_of, user_id)
+    references public.transactions (id, user_id) on delete set null (refund_of),
 
   constraint transactions_amount_sign check (
     case type
@@ -161,6 +186,54 @@ create policy transactions_select_own on public.transactions
 
 revoke all on table public.accounts from anon, authenticated;
 revoke all on table public.transactions from anon, authenticated;
+
+
+-- 4b. Atomic writes (called only by the backend with the secret key) ----------
+
+-- Add account: the account and its opening balance in one step. The client key
+-- belongs to the opening transaction; a retry with the same key returns the
+-- account it already made. A credit card's opening is passed negative (money due).
+create or replace function public.create_account(
+  p_user       uuid,
+  p_client_key uuid,
+  p_name       text,
+  p_kind       text,
+  p_bank       text,
+  p_icon       text,
+  p_opening    bigint,
+  p_balance_on date
+) returns public.accounts
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_account public.accounts;
+begin
+  select a.* into v_account
+  from public.transactions t join public.accounts a on a.id = t.account_id
+  where t.user_id = p_user and t.client_key = p_client_key;
+  if found then
+    return v_account;
+  end if;
+
+  insert into public.accounts (user_id, name, kind, bank, icon)
+  values (p_user, btrim(p_name), p_kind, p_bank, p_icon)
+  returning * into v_account;
+
+  insert into public.transactions (user_id, client_key, type, amount_paise, account_id,
+                                   description, occurred_on)
+  values (p_user, p_client_key, 'opening', p_opening, v_account.id,
+          'Opening balance', p_balance_on);
+
+  return v_account;
+end;
+$$;
+
+revoke execute on function public.create_account(uuid, uuid, text, text, text, text, bigint, date)
+  from public, anon, authenticated;
+grant execute on function public.create_account(uuid, uuid, text, text, text, text, bigint, date)
+  to service_role;
 
 
 -- 5. Copy existing data, once per user -----------------------------------------
