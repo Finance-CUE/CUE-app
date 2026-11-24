@@ -6,11 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
-import { CategoryIcon, ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
+import { CategoryIcon, ClockIcon, EyeIcon, EyeOffIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { Card, EmptyCard, Fab, Row, ScreenHeader, SectionHeader, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
 import { daysUntil, formatDate, formatDateTime, greeting, toISODate, weekDays, weekStartBack } from '../dates';
-import { formatRupees } from '../format';
+import { usePrivacyStore, useRupees } from '../privacy';
 import { useDeleteSpend, useDeleteSubscription, useDueSubscriptions, useSpends, useSubscriptions, useSummary, useToday } from '../hooks';
 import { EntryDetailSheet } from '../sheets/EntryDetailSheet';
 import { KhataSheet } from '../sheets/KhataSheet';
@@ -49,6 +49,10 @@ function Loading() {
 }
 
 export function TodayScreen() {
+  // Masked while the eye toggle hides amounts.
+  const formatRupees = useRupees();
+  const amountsHidden = usePrivacyStore((s) => s.hidden);
+  const toggleAmounts = usePrivacyStore((s) => s.toggle);
   const insets = useSafeAreaInsets();
   const theme = useArchetypeTheme();
   const queryClient = useQueryClient();
@@ -194,7 +198,16 @@ export function TodayScreen() {
           ) : (
             <>
               {nw === null ? null : (
-                <Text style={{ fontSize: 11, letterSpacing: 1.5, color: theme.onDeep }}>NET WORTH</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 11, letterSpacing: 1.5, color: theme.onDeep }}>NET WORTH</Text>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={amountsHidden ? 'Show amounts' : 'Hide amounts'}
+                    onPress={toggleAmounts}
+                    hitSlop={12}>
+                    {amountsHidden ? <EyeOffIcon color={theme.onDeep} size={20} /> : <EyeIcon color={theme.onDeep} size={20} />}
+                  </TouchableOpacity>
+                </View>
               )}
               <Text style={{ fontSize: 24, color: COLORS.white, fontFamily: HEADING_FONT }}>
                 {nw === null ? 'Add your first financial details to see your full picture.' : formatRupees(nw)}

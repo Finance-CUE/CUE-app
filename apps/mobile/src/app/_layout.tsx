@@ -18,6 +18,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuthStore } from '@/features/auth/store';
 import { useAssessmentStore } from '@/features/assessment/store';
+import { usePrivacyStore } from '@/features/money/privacy';
 
 const CUE_BACKGROUND = '#FAF7F2';
 
@@ -30,6 +31,7 @@ export default function RootLayout() {
   useEffect(() => {
     restore();
     hydrateAssessment();
+    void usePrivacyStore.getState().hydrate();
   }, [restore, hydrateAssessment]);
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { Card, EmptyCard, Fab, Row, ScreenHeader, ScreenScroll, SectionHeader, useProfileAvatar } from '../components/ui';
-import { formatRupees } from '../format';
+import { useRupees } from '../privacy';
 import { useKhata } from '../hooks';
 import { personBalances, type PersonBalance } from '../khata';
 import { KhataSheet } from '../sheets/KhataSheet';
@@ -12,6 +12,8 @@ import { PersonSheet } from '../sheets/PersonSheet';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 export function KhataScreen() {
+  // Masked while the eye toggle hides amounts.
+  const formatRupees = useRupees();
   const theme = useArchetypeTheme();
   const queryClient = useQueryClient();
   const avatar = useProfileAvatar();

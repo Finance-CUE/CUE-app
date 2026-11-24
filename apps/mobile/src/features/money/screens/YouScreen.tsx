@@ -10,7 +10,7 @@ import { Sparkline } from '../components/Sparkline';
 import { Card, ScreenHeader, ScreenScroll, SecondaryButton, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
 import { startOfWeek, toISODate } from '../dates';
-import { formatRupees } from '../format';
+import { useRupees } from '../privacy';
 import { useNudgePlan, useNudges, useSaveNudges, useSpends, useToday, useTrend } from '../hooks';
 import { notificationsBlocked } from '../notifications';
 import { weeklyReflection } from '../reflection';
@@ -60,6 +60,8 @@ function useNotificationsBlocked(): boolean {
 }
 
 export function YouScreen() {
+  // Masked while the eye toggle hides amounts.
+  const formatRupees = useRupees();
   const theme = useArchetypeTheme();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);

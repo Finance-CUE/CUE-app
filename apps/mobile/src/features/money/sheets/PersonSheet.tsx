@@ -5,7 +5,7 @@ import { COLORS } from '@/features/assessment/theme';
 import { toErrorMessage } from '@/lib/api';
 import { Card, PrimaryButton } from '../components/ui';
 import { formatDateTime } from '../dates';
-import { formatRupees } from '../format';
+import { useRupees } from '../privacy';
 import { useDeleteKhata, useSettleKhata } from '../hooks';
 import type { PersonBalance } from '../khata';
 import type { KhataEntry, PaymentMethod } from '../types';
@@ -19,6 +19,8 @@ export function PersonSheet({
   person: PersonBalance | undefined;
   onClose: () => void;
 }) {
+  // Masked while the eye toggle hides amounts.
+  const formatRupees = useRupees();
   const settle = useSettleKhata();
   const remove = useDeleteKhata();
   const [error, setError] = useState<string | null>(null);

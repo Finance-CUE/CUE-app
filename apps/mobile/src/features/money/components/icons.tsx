@@ -27,6 +27,22 @@ export const TodayIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** Amounts shown; tapping hides them. */
+export const EyeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+    <Circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+
+/** Amounts hidden; tapping shows them. */
+export const EyeOffIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M10.6 5.1A10.5 10.5 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-2.6 3.5M6.5 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6" />
+    <Path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
+  </Icon>
+);
+
 export const InsightsIcon = (p: IconProps) => (
   <Icon {...p}>
     <Path d="M5 20V11M12 20V5M19 20v-6" />

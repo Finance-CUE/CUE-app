@@ -7,7 +7,7 @@ import { CategoryIcon } from '../components/icons';
 import { Card, EmptyCard, Row, ScreenHeader, ScreenScroll, SectionHeader, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
 import { monthRange, toISODate, weekDays } from '../dates';
-import { formatRupees } from '../format';
+import { useRupees } from '../privacy';
 import { useSpends } from '../hooks';
 import type { Category } from '../types';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
@@ -15,11 +15,14 @@ import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const BAR_AREA = 96;
 
-const Total = ({ paise }: { paise: number }) => (
-  <Text style={{ fontSize: 13, color: COLORS.muted }}>{formatRupees(paise)} total</Text>
-);
+function Total({ paise }: { paise: number }) {
+  const formatRupees = useRupees();
+  return <Text style={{ fontSize: 13, color: COLORS.muted }}>{formatRupees(paise)} total</Text>;
+}
 
 export function InsightsScreen() {
+  // Masked while the eye toggle hides amounts.
+  const formatRupees = useRupees();
   const theme = useArchetypeTheme();
   const queryClient = useQueryClient();
   const avatar = useProfileAvatar();

@@ -7,7 +7,7 @@ import { Card, EmptyCard, Row, ScreenScroll } from '../components/ui';
 import { Sparkline } from '../components/Sparkline';
 import { toISODate } from '../dates';
 import { countPoints } from '../chart';
-import { formatRupees } from '../format';
+import { useRupees } from '../privacy';
 import { useSummary, useToday, useTrend } from '../hooks';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
@@ -29,6 +29,8 @@ export function NetWorthScreen() {
 }
 
 function NetWorthBody() {
+  // Masked while the eye toggle hides amounts.
+  const formatRupees = useRupees();
   const theme = useArchetypeTheme();
   const router = useRouter();
   const summary = useSummary();

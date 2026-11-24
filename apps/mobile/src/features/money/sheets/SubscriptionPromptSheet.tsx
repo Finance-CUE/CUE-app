@@ -3,7 +3,7 @@ import { Text, View } from 'react-native';
 import { COLORS } from '@/features/assessment/theme';
 import { PrimaryButton, SecondaryButton } from '@/features/money/components/ui';
 import { formatDate, parseISODate } from '@/features/money/dates';
-import { formatRupees } from '@/features/money/format';
+import { useRupees } from '@/features/money/privacy';
 import { useAnswerCycle } from '@/features/money/hooks';
 import type { DueCycle } from '@/features/money/types';
 import { FormError, Sheet, useGuardedSubmit } from './Sheet';
@@ -19,6 +19,8 @@ export function SubscriptionPromptSheet({
   currentMonth: string;
   onClose: () => void;
 }) {
+  // Masked while the eye toggle hides amounts.
+  const formatRupees = useRupees();
   const cycle = due[0];
   const mutation = useAnswerCycle();
   const { run, error } = useGuardedSubmit(!!cycle);
