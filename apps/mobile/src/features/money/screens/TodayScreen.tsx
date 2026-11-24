@@ -35,6 +35,7 @@ import { SubscriptionSheet } from '../sheets/SubscriptionSheet';
 import { AccountsCard } from '../today/AccountsCard';
 import { helloLine, shortDay } from '../today/model';
 import { NetWorthCard } from '../today/NetWorthCard';
+import { NoteCard } from '../today/NoteCard';
 import { PastDateBanner, TodayHeader } from '../today/TodayHeader';
 import { TodayTransactions } from '../transactions/TodayTransactions';
 import { useTxnFlows } from '../transactions/useTxnFlows';
@@ -236,11 +237,14 @@ export function TodayScreen() {
           ))}
         </View>
 
+        {/* Block 4 (decided 16 Nov): the note sits right after the overview. */}
+        <NoteCard />
+
         <View onLayout={(e) => (accountsY.current = e.nativeEvent.layout.y)}>
           <AccountsCard
             query={netWorth}
             onAdd={() => setSheet('addAccount')}
-            onOpen={(a) => flows.openBalance(a.id)}
+            onOpen={(a) => router.push(`/account/${a.id}`)}
           />
         </View>
 

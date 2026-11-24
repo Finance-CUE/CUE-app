@@ -12,6 +12,7 @@ import { usePrivacyStore, useRupees } from '../privacy';
 import { useNetWorth, useToday, useTrend } from '../hooks';
 import { breakdown, changeLine, netWorthSentence } from '../today/model';
 import { CardError, Eyebrow, Skeleton, TodayCard } from '../today/parts';
+import type { Account } from '../types';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 function Dot({ color, label }: { color: string; label: string }) {
@@ -47,6 +48,19 @@ function NetWorthBody() {
   const known = countPoints(points.map((p) => p.balance_paise));
   const change = nw ? changeLine(nw.change_this_month_paise, formatRupees) : null;
   const table = nw ? breakdown(nw, nw.accounts) : null;
+  // "Tap opens" (spec 4.3): Khata for money lent or borrowed; the account
+  // itself when there is exactly one of that kind. Other rows don't respond yet.
+  const only = (pick: (a: Account) => boolean) => {
+    const found = (nw?.accounts ?? []).filter(pick);
+    return found.length === 1 ? () => router.push(`/account/${found[0].id}`) : undefined;
+  };
+  const opens = (label: string): (() => void) | undefined => {
+    if (label === 'Money lent' || label === 'Money borrowed') return () => router.push('/khata');
+    if (label === 'Bank accounts') return only((a) => a.kind === 'savings' || a.kind === 'current');
+    if (label === 'Cash') return only((a) => a.kind === 'cash');
+    if (label === 'Credit card outstanding') return only((a) => a.kind === 'credit_card');
+    return undefined;
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -89,13 +103,13 @@ function NetWorthBody() {
             <>
               <TodayCard title={<Eyebrow>ASSETS</Eyebrow>}>
                 {table.assets.map((r) => (
-                  <Line key={r.label} label={r.label} amount={formatRupees(r.paise)} />
+                  <Line key={r.label} label={r.label} amount={formatRupees(r.paise)} onPress={opens(r.label)} />
                 ))}
                 <Line label="Total assets" amount={formatRupees(table.totalAssets)} strong />
               </TodayCard>
               <TodayCard title={<Eyebrow>LIABILITIES</Eyebrow>}>
                 {table.liabilities.map((r) => (
-                  <Line key={r.label} label={r.label} amount={formatRupees(r.paise)} />
+                  <Line key={r.label} label={r.label} amount={formatRupees(r.paise)} onPress={opens(r.label)} />
                 ))}
                 <Line label="Total liabilities" amount={formatRupees(table.totalLiabilities)} strong />
               </TodayCard>
@@ -142,20 +156,28 @@ function NetWorthBody() {
   );
 }
 
-function Line({ label, amount, strong }: { label: string; amount: string; strong?: boolean }) {
+function Line({ label, amount, strong, onPress }: { label: string; amount: string; strong?: boolean; onPress?: () => void }) {
   return (
-    <View
+    <TouchableOpacity
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={`${label}, ${amount}`}
+      disabled={!onPress}
+      onPress={onPress}
+      activeOpacity={0.7}
       style={{
         flexDirection: 'row',
         justifyContent: 'space-between',
-        minHeight: 32,
+        minHeight: onPress ? 44 : 32,
         alignItems: 'center',
         borderTopWidth: strong ? 1 : 0,
         borderTopColor: COLORS.cardBorder,
         paddingTop: strong ? 8 : 0,
       }}>
-      <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: strong ? '700' : '500' }}>{label}</Text>
+      <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: strong ? '700' : '500' }}>
+        {label}
+        {onPress ? ' ›' : ''}
+      </Text>
       <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: strong ? '700' : '600' }}>{amount}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
