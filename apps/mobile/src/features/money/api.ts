@@ -2,6 +2,10 @@ import { deviceTimeZone } from '@/features/money/dates';
 import { api } from '@/lib/api';
 import type {
   Account,
+  AccountInput,
+  AdjustInput,
+  LedgerTxn,
+  NetWorth,
   CycleAnswer,
   PaymentMethod,
   DueCycle,
@@ -67,6 +71,33 @@ export async function settleKhata({ id, method }: { id: string; method?: Payment
 /** Open accounts with today's balance, largest first, cash last, cards after. */
 export async function fetchAccounts(today: string): Promise<Account[]> {
   const result = await api.get<Account[]>('/money/accounts', { params: { today } });
+  return result.data;
+}
+
+export async function addAccount({ today, ...input }: AccountInput & { today: string }): Promise<Account> {
+  const result = await api.post<Account>('/money/accounts', input, { params: { today } });
+  return result.data;
+}
+
+/** Update balance / Reconcile. Null when the balance already matched (nothing saved). */
+export async function adjustBalance({
+  id,
+  today,
+  ...input
+}: AdjustInput & { id: string; today: string }): Promise<LedgerTxn | null> {
+  const result = await api.post<LedgerTxn | ''>(`/money/accounts/${id}/adjust`, input, { params: { today } });
+  return result.status === 204 || !result.data ? null : result.data;
+}
+
+/** The net worth card and breakdown, worked out on the server. */
+export async function fetchNetWorth(today: string): Promise<NetWorth> {
+  const result = await api.get<NetWorth>('/money/net-worth', { params: { today } });
+  return result.data;
+}
+
+/** Ledger entries dated start..end (inclusive, at most a year). */
+export async function fetchTransactions(start: string, end: string): Promise<LedgerTxn[]> {
+  const result = await api.get<LedgerTxn[]>('/money/transactions', { params: { start, end } });
   return result.data;
 }
 

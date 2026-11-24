@@ -107,6 +107,63 @@ export type KhataInput = {
   /** Makes a retry return the same entry instead of saving a second one. */
   client_key?: string;
 };
+/** GET /money/net-worth: section 8 figures as of `on`, plus open accounts. */
+export type NetWorth = {
+  on: string;
+  available_paise: number;
+  other_assets_paise: number;
+  receivables_paise: number;
+  card_dues_paise: number;
+  borrowings_paise: number;
+  other_liabilities_paise: number;
+  total_assets_paise: number;
+  total_liabilities_paise: number;
+  net_worth_paise: number;
+  /** Null hides the line: no full previous month yet. */
+  change_this_month_paise: number | null;
+  accounts: Account[];
+};
+export type TxnType =
+  | 'opening'
+  | 'income'
+  | 'expense'
+  | 'transfer'
+  | 'refund'
+  | 'adjustment'
+  | 'lend'
+  | 'borrow'
+  | 'repayment_received'
+  | 'repayment_made';
+export type LedgerTxn = {
+  id: string;
+  client_key: string;
+  type: TxnType;
+  amount_paise: number;
+  account_id: string | null;
+  to_account_id: string | null;
+  category: string | null;
+  description: string | null;
+  note: string | null;
+  reason: string | null;
+  occurred_on: string;
+  created_at: string;
+  deleted: boolean;
+};
+export type AccountInput = {
+  client_key: string;
+  name: string;
+  kind: AccountKind;
+  /** For a credit card, the amount due on balance_on. */
+  opening_paise: number;
+  balance_on: string;
+};
+export type AdjustInput = {
+  client_key: string;
+  /** The balance the bank shows; for a card, the amount due. */
+  actual_paise: number;
+  reason: string;
+  occurred_on: string;
+};
 export type AccountKind = 'savings' | 'current' | 'cash' | 'credit_card' | 'other';
 export type Account = {
   id: string;
