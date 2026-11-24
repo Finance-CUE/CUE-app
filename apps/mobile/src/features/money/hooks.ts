@@ -42,10 +42,11 @@ export const useAccounts = (today: string, enabled = true) =>
 export const useNetWorth = (today: string) =>
   useQuery({ queryKey: ['money', 'net-worth', today], queryFn: () => moneyApi.fetchNetWorth(today) });
 
-export const useTransactions = (start: string, end: string) =>
+export const useTransactions = (start: string, end: string, enabled = true) =>
   useQuery({
     queryKey: ['money', 'transactions', start, end],
     queryFn: () => moneyApi.fetchTransactions(start, end),
+    enabled,
   });
 
 /** True once `pending` has lasted `ms`: the server may be waking from sleep (spec, states). */
@@ -104,6 +105,8 @@ export const useSetStartingMoney = () => useMoneyMutation(moneyApi.putStartingMo
 export const useAddKhata = () => useMoneyMutation(moneyApi.addKhata);
 export const useAddAccount = () => useMoneyMutation(moneyApi.addAccount);
 export const useAdjustBalance = () => useMoneyMutation(moneyApi.adjustBalance);
+export const useAddTransaction = () => useMoneyMutation(moneyApi.addTransaction);
+export const useDeleteTransaction = () => useMoneyMutation(moneyApi.deleteTransaction);
 export const useSettleKhata = () => useMoneyMutation(moneyApi.settleKhata);
 export const useDeleteKhata = () => useMoneyMutation(moneyApi.deleteKhata);
 export const useAddSubscription = () => useMoneyMutation(moneyApi.addSubscription);

@@ -157,6 +157,18 @@ export type AccountInput = {
   opening_paise: number;
   balance_on: string;
 };
+/** POST /money/transactions: what Quick Add saves in P0. */
+export type EntryInput = {
+  client_key: string;
+  type: 'expense' | 'income' | 'transfer';
+  amount_paise: number;
+  account_id: string;
+  to_account_id?: string;
+  category?: string;
+  description?: string;
+  note?: string;
+  occurred_on: string;
+};
 export type AdjustInput = {
   client_key: string;
   /** The balance the bank shows; for a card, the amount due. */

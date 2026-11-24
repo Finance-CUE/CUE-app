@@ -18,12 +18,18 @@ export function Sheet({
   title,
   subtitle,
   children,
+  footer,
+  tall,
 }: {
   visible: boolean;
   onClose: () => void;
   title: string;
   subtitle?: string;
   children: ReactNode;
+  /** Stays below the scrolling content, in thumb reach (a sticky Save). */
+  footer?: ReactNode;
+  /** Grow to about 90% of the screen, as a Quick Add form does. */
+  tall?: boolean;
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -39,6 +45,7 @@ export function Sheet({
         <View
           style={{
             maxHeight: '90%',
+            ...(tall ? { height: '90%' } : {}),
             backgroundColor: COLORS.background,
             borderTopLeftRadius: 22,
             borderTopRightRadius: 22,
@@ -56,6 +63,7 @@ export function Sheet({
             </View>
             {children}
           </ScrollView>
+          {footer ? <View style={{ paddingTop: 12, gap: 8 }}>{footer}</View> : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -64,6 +72,11 @@ export function Sheet({
 
 export function FormError({ message }: { message: string | null }) {
   return message ? <Text style={{ color: COLORS.error, fontSize: 14 }}>{message}</Text> : null;
+}
+
+/** An error under its field, 11.5px (spec Quick Add validation). */
+export function FieldError({ message }: { message?: string | null }) {
+  return message ? <Text style={{ color: COLORS.error, fontSize: 11.5, marginTop: -8 }}>{message}</Text> : null;
 }
 
 /**

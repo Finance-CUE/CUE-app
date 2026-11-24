@@ -4,6 +4,7 @@ import type {
   Account,
   AccountInput,
   AdjustInput,
+  EntryInput,
   LedgerTxn,
   NetWorth,
   CycleAnswer,
@@ -92,6 +93,18 @@ export async function adjustBalance({
 /** The net worth card and breakdown, worked out on the server. */
 export async function fetchNetWorth(today: string): Promise<NetWorth> {
   const result = await api.get<NetWorth>('/money/net-worth', { params: { today } });
+  return result.data;
+}
+
+/** Quick Add. A retry with the same client key returns the entry already saved. */
+export async function addTransaction(input: EntryInput): Promise<LedgerTxn> {
+  const result = await api.post<LedgerTxn>('/money/transactions', input);
+  return result.data;
+}
+
+/** Deleted but kept, so it can be restored. Undo after a save uses this too. */
+export async function deleteTransaction(id: string): Promise<LedgerTxn> {
+  const result = await api.delete<LedgerTxn>(`/money/transactions/${id}`);
   return result.data;
 }
 
