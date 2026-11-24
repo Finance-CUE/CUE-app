@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   type NativeScrollEvent,
@@ -15,12 +15,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
-import { CategoryIcon, ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
+import { CategoryIcon, PlusIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { Card, EmptyCard, Fab, Row, SectionHeader } from '../components/ui';
 import { categoryLabel } from '../categories';
 import { daysUntil, formatDate, formatDateTime, toISODate, weekDays, weekStartBack } from '../dates';
 import { useRupees } from '../privacy';
-import { useDeleteSpend, useDeleteSubscription, useDueSubscriptions, useNetWorth, useSpends, useSubscriptions, useToday } from '../hooks';
+import {
+  useDeleteSpend,
+  useDeleteSubscription,
+  useDeleteTransaction,
+  useDueSubscriptions,
+  useNetWorth,
+  useSpends,
+  useSubscriptions,
+  useToday,
+} from '../hooks';
+import { Toast, type ToastMessage } from '../components/Toast';
+import { savedLabel } from '../quickAdd/model';
+import { type QuickAddChoice, QuickAddSheet, type Saved } from '../quickAdd/QuickAddSheet';
 import { AddAccountSheet } from '../sheets/AddAccountSheet';
 import { EntryDetailSheet } from '../sheets/EntryDetailSheet';
 import { KhataSheet } from '../sheets/KhataSheet';
@@ -35,7 +47,7 @@ import { PastDateBanner, TodayHeader } from '../today/TodayHeader';
 import type { DueCycle, Spend } from '../types';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
-type SheetName = 'log' | 'khata' | 'sub' | 'addAccount' | 'balance' | null;
+type SheetName = 'log' | 'khata' | 'sub' | 'addAccount' | 'balance' | 'quick' | null;
 /** Scrolled this far, the header collapses to a 56px bar (spec 4.1). */
 const COLLAPSE_AT = 150;
 type Detail = { title: string; lines: string[]; onDelete: () => Promise<void>; onEdit?: () => void };
@@ -116,6 +128,35 @@ export function TodayScreen() {
   const prompt = (due.data ?? []).filter((c) => !dismissedKeys.includes(cycleKey(c)));
   const delSpend = useDeleteSpend();
   const delSub = useDeleteSubscription();
+  const delTxn = useDeleteTransaction();
+  const [quick, setQuick] = useState<{ kind: QuickAddChoice; account: string | null }>({ kind: null, account: null });
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const clearToast = useCallback(() => setToast(null), []);
+  const openQuick = (kind: QuickAddChoice, account: string | null = null) => {
+    setQuick({ kind, account });
+    setSheet('quick');
+  };
+  // "Expense saved Â· Undo", plus the low-balance note when an account went below â‚¹0.
+  const onSaved = ({ txn, kind, lowNote, accountId }: Saved) =>
+    setToast({
+      id: txn.id,
+      text: savedLabel(kind),
+      action: { label: 'Undo', onPress: () => void delTxn.mutateAsync(txn.id).catch(() => undefined) },
+      ...(lowNote
+        ? {
+            note: {
+              text: lowNote,
+              action: {
+                label: 'Update',
+                onPress: () => {
+                  setBalanceAccount(accountId);
+                  setSheet('balance');
+                },
+              },
+            },
+          }
+        : {}),
+    });
 
   const refresh = async () => {
     setRefreshing(true);
@@ -184,10 +225,12 @@ export function TodayScreen() {
     );
   };
 
-  const tiles: { label: string; bg: string; icon: ReactNode; sheet: SheetName }[] = [
-    { label: 'Cash', bg: theme.tint, icon: <RupeeIcon color={theme.accentText} />, sheet: 'log' },
-    { label: 'Lend / Borrow', bg: COLORS.sageTint, icon: <SwapIcon color={COLORS.sage} />, sheet: 'khata' },
-    { label: 'Subscription', bg: COLORS.peachTint, icon: <ClockIcon color={COLORS.peach} />, sheet: 'sub' },
+  // Suggestion 20: the most common entries one tap from the top; the + stays for later.
+  const shortcuts: { label: string; icon: ReactNode; onPress: () => void }[] = [
+    { label: 'Expense', icon: <RupeeIcon color={theme.accentText} />, onPress: () => openQuick('expense') },
+    { label: 'Income', icon: <RupeeIcon color={theme.accentText} />, onPress: () => openQuick('income') },
+    { label: 'Transfer', icon: <SwapIcon color={theme.accentText} />, onPress: () => openQuick('transfer') },
+    { label: 'More', icon: <PlusIcon color={theme.accentText} />, onPress: () => openQuick(null) },
   ];
 
   return (
@@ -225,6 +268,31 @@ export function TodayScreen() {
           onAddAccount={() => setSheet('addAccount')}
         />
 
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          {shortcuts.map((t) => (
+            <TouchableOpacity
+              key={t.label}
+              accessibilityRole="button"
+              accessibilityLabel={t.label === 'More' ? 'More ways to log' : `Log ${t.label.toLowerCase()}`}
+              onPress={t.onPress}
+              activeOpacity={0.7}
+              style={{ alignItems: 'center', gap: 6, minWidth: 64 }}>
+              <View
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 24,
+                  backgroundColor: theme.tint,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                {t.icon}
+              </View>
+              <Text style={{ fontSize: 12, color: COLORS.text }}>{t.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <View onLayout={(e) => (accountsY.current = e.nativeEvent.layout.y)}>
           <AccountsCard
             query={netWorth}
@@ -234,43 +302,6 @@ export function TodayScreen() {
               setSheet('balance');
             }}
           />
-        </View>
-
-        <View style={{ gap: 12 }}>
-          <SectionHeader title="Quick add" />
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            {tiles.map((t) => (
-              <TouchableOpacity
-                key={t.label}
-                accessibilityRole="button"
-                onPress={() => setSheet(t.sheet)}
-                activeOpacity={0.7}
-                style={{
-                  flex: 1,
-                  alignItems: 'center',
-                  gap: 8,
-                  paddingVertical: 14,
-                  paddingHorizontal: 4,
-                  borderRadius: 16,
-                  backgroundColor: COLORS.white,
-                  borderWidth: 1,
-                  borderColor: COLORS.cardBorder,
-                }}>
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    backgroundColor: t.bg,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                  {t.icon}
-                </View>
-                <Text style={{ fontSize: 12, color: COLORS.text, textAlign: 'center' }}>{t.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         <View style={{ gap: 12 }}>
@@ -318,7 +349,7 @@ export function TodayScreen() {
                   })}
                 </View>
                 <Text style={{ fontSize: 13, color: COLORS.muted, marginTop: 12 }}>
-                  {DAY[selIdx]} · {formatRupees(totals[selIdx])} {selCount ? `${selCount} logged` : 'Nothing logged'}
+                  {DAY[selIdx]} Â· {formatRupees(totals[selIdx])} {selCount ? `${selCount} logged` : 'Nothing logged'}
                 </Text>
               </>
             )}
@@ -408,7 +439,8 @@ export function TodayScreen() {
         </View>
       ) : null}
 
-      <Fab onPress={() => setSheet('log')} />
+      <Fab onPress={() => openQuick(null)} accessibilityLabel="Log something" />
+      <Toast toast={toast} onDone={clearToast} />
 
       <LogSpendSheet visible={sheet === 'log'} onClose={close} editing={editing} defaultDate={selected} />
       <KhataSheet visible={sheet === 'khata'} onClose={close} />
@@ -420,12 +452,23 @@ export function TodayScreen() {
         onClose={() => setDismissed({ on: todayISO, keys: [...dismissedKeys, ...prompt.map(cycleKey)] })}
       />
       <AddAccountSheet visible={sheet === 'addAccount'} onClose={close} />
+      <QuickAddSheet
+        visible={sheet === 'quick'}
+        initial={quick.kind}
+        presetAccountId={quick.account}
+        accounts={netWorth.data?.accounts ?? []}
+        defaultDate={selected}
+        onClose={close}
+        onSaved={onSaved}
+        onLendBorrow={() => setSheet('khata')}
+        onSubscription={() => setSheet('sub')}
+      />
       <UpdateBalanceSheet
         visible={sheet === 'balance'}
         onClose={close}
         accounts={netWorth.data?.accounts ?? []}
         initialAccountId={balanceAccount}
-        onAddExpense={() => setSheet('log')}
+        onAddExpense={() => openQuick('expense', balanceAccount)}
       />
       <EntryDetailSheet
         visible={detail !== null}
