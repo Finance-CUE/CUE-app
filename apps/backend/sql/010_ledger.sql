@@ -237,136 +237,150 @@ grant execute on function public.create_account(uuid, uuid, text, text, text, te
 
 
 -- 5. Copy existing data, once per user -----------------------------------------
--- Only users with no accounts and no ledger rows yet are copied, so a re-run
--- does nothing. (A user who never set a balance gets ledger rows but no accounts.)
--- Dates are taken in India time, where every current user is.
+-- One DO block, so the working tables below live for the whole copy even
+-- where an SQL editor runs each statement in its own transaction (the
+-- Supabase editor does). They are dropped at the end.
 
-create temporary table _ledger_users on commit drop as
-select u.id as user_id
-from public.users u
-where not exists (select 1 from public.accounts a where a.user_id = u.id)
-  and not exists (select 1 from public.transactions t where t.user_id = u.id);
+do $copy$
+begin
+  -- Only users with no accounts and no ledger rows yet are copied, so a re-run
+  -- does nothing. (A user who never set a balance gets ledger rows but no accounts.)
+  -- Dates are taken in India time, where every current user is.
 
--- The moment each user's typed balance was last true: the newest of set_at
--- and the balance history (the same anchor GET /money/summary uses).
-create temporary table _anchor on commit drop as
-select s.user_id, s.bank_paise, s.cash_paise,
-       greatest(s.set_at, coalesce(max(h.recorded_at), s.set_at)) as at
-from public.starting_money s
-join _ledger_users l on l.user_id = s.user_id
-left join public.balance_history h on h.user_id = s.user_id
-group by s.user_id, s.bank_paise, s.cash_paise, s.set_at;
+  drop table if exists _ledger_users;
+  create temporary table _ledger_users as
+  select u.id as user_id
+  from public.users u
+  where not exists (select 1 from public.accounts a where a.user_id = u.id)
+    and not exists (select 1 from public.transactions t where t.user_id = u.id);
 
--- 5a. A Bank and a Cash account for everyone who set a balance.
-insert into public.accounts (user_id, name, kind, created_at)
-select user_id, 'Bank', 'savings', at from _anchor
-union all
-select user_id, 'Cash', 'cash', at from _anchor;
+  -- The moment each user's typed balance was last true: the newest of set_at
+  -- and the balance history (the same anchor GET /money/summary uses).
+  drop table if exists _anchor;
+  create temporary table _anchor as
+  select s.user_id, s.bank_paise, s.cash_paise,
+         greatest(s.set_at, coalesce(max(h.recorded_at), s.set_at)) as at
+  from public.starting_money s
+  join _ledger_users l on l.user_id = s.user_id
+  left join public.balance_history h on h.user_id = s.user_id
+  group by s.user_id, s.bank_paise, s.cash_paise, s.set_at;
 
-create temporary table _acct on commit drop as
-select a.user_id,
-       max(a.id::text) filter (where a.kind = 'savings')::uuid as bank_id,
-       max(a.id::text) filter (where a.kind = 'cash')::uuid    as cash_id
-from public.accounts a
-join _anchor n on n.user_id = a.user_id
-group by a.user_id;
+  -- 5a. A Bank and a Cash account for everyone who set a balance.
+  insert into public.accounts (user_id, name, kind, created_at)
+  select user_id, 'Bank', 'savings', at from _anchor
+  union all
+  select user_id, 'Cash', 'cash', at from _anchor;
 
--- 5b. Opening balances, dated the day the balance was typed ("Balance on").
-insert into public.transactions (user_id, type, amount_paise, account_id, description,
-                                 occurred_on, source, created_at, updated_at)
-select n.user_id, 'opening', n.bank_paise, c.bank_id, 'Opening balance',
-       (n.at at time zone 'Asia/Kolkata')::date, 'migration', n.at, n.at
-from _anchor n join _acct c using (user_id)
-union all
-select n.user_id, 'opening', n.cash_paise, c.cash_id, 'Opening balance',
-       (n.at at time zone 'Asia/Kolkata')::date, 'migration', n.at, n.at
-from _anchor n join _acct c using (user_id);
+  drop table if exists _acct;
+  create temporary table _acct as
+  select a.user_id,
+         max(a.id::text) filter (where a.kind = 'savings')::uuid as bank_id,
+         max(a.id::text) filter (where a.kind = 'cash')::uuid    as cash_id
+  from public.accounts a
+  join _anchor n on n.user_id = a.user_id
+  group by a.user_id;
 
--- 5c. Settled Khata entries for money borrowed logged a "Paid back to <name>"
--- spend. Pair each such spend with its entry so it becomes a repayment, not
--- spending: same user, amount, exact text and the entry's settle date.
-create temporary table _paid_back on commit drop as
-select distinct on (s.id) s.id as spend_id, k.id as entry_id
-from public.spends s
-join _ledger_users l on l.user_id = s.user_id
-join public.khata_entries k
-  on k.user_id = s.user_id
- and k.direction = 'borrowed'
- and k.settled_at is not null
- and k.amount_paise = s.amount_paise
- and s.category = 'other'
- and s.description in (
-       'Paid back to ' || k.person,
-       'Paid back to ' || k.person || ' in cash',
-       'Paid back to ' || k.person || ' via UPI')
- and s.spent_on = (k.settled_at at time zone 'Asia/Kolkata')::date
-order by s.id, k.settled_at;
+  -- 5b. Opening balances, dated the day the balance was typed ("Balance on").
+  insert into public.transactions (user_id, type, amount_paise, account_id, description,
+                                   occurred_on, source, created_at, updated_at)
+  select n.user_id, 'opening', n.bank_paise, c.bank_id, 'Opening balance',
+         (n.at at time zone 'Asia/Kolkata')::date, 'migration', n.at, n.at
+  from _anchor n join _acct c using (user_id)
+  union all
+  select n.user_id, 'opening', n.cash_paise, c.cash_id, 'Opening balance',
+         (n.at at time zone 'Asia/Kolkata')::date, 'migration', n.at, n.at
+  from _anchor n join _acct c using (user_id);
 
--- 5d. Spends become expenses on Bank (no account if the user never set a
--- balance). The row keeps the spend's id.
-insert into public.transactions (id, user_id, type, amount_paise, account_id, category,
-                                 description, occurred_on, source, legacy_spend_id,
-                                 created_at, updated_at)
-select s.id, s.user_id, 'expense', s.amount_paise, c.bank_id,
-       case s.category
-         when 'food'         then 'food_delivery'
-         when 'fun'          then 'entertainment'
-         when 'subscription' then 'subscriptions'
-         else s.category
-       end,
-       s.description, s.spent_on, 'migration', s.id, s.created_at, s.created_at
-from public.spends s
-join _ledger_users l on l.user_id = s.user_id
-left join _acct c on c.user_id = s.user_id
-where not exists (select 1 from _paid_back p where p.spend_id = s.id);
+  -- 5c. Settled Khata entries for money borrowed logged a "Paid back to <name>"
+  -- spend. Pair each such spend with its entry so it becomes a repayment, not
+  -- spending: same user, amount, exact text and the entry's settle date.
+  drop table if exists _paid_back;
+  create temporary table _paid_back as
+  select distinct on (s.id) s.id as spend_id, k.id as entry_id
+  from public.spends s
+  join _ledger_users l on l.user_id = s.user_id
+  join public.khata_entries k
+    on k.user_id = s.user_id
+   and k.direction = 'borrowed'
+   and k.settled_at is not null
+   and k.amount_paise = s.amount_paise
+   and s.category = 'other'
+   and s.description in (
+         'Paid back to ' || k.person,
+         'Paid back to ' || k.person || ' in cash',
+         'Paid back to ' || k.person || ' via UPI')
+   and s.spent_on = (k.settled_at at time zone 'Asia/Kolkata')::date
+  order by s.id, k.settled_at;
 
--- 5e. Khata: every entry is a lend or borrow with no account, so bank and cash
--- stay as they are (the money left or arrived before the ledger existed).
-insert into public.transactions (user_id, type, amount_paise, khata_entry_id, description,
-                                 note, occurred_on, source, created_at, updated_at)
-select k.user_id,
-       case k.direction when 'lent' then 'lend' else 'borrow' end,
-       k.amount_paise, k.id, k.person, k.note,
-       (k.created_at at time zone 'Asia/Kolkata')::date, 'migration', k.created_at, k.created_at
-from public.khata_entries k
-join _ledger_users l on l.user_id = k.user_id;
+  -- 5d. Spends become expenses on Bank (no account if the user never set a
+  -- balance). The row keeps the spend's id.
+  insert into public.transactions (id, user_id, type, amount_paise, account_id, category,
+                                   description, occurred_on, source, legacy_spend_id,
+                                   created_at, updated_at)
+  select s.id, s.user_id, 'expense', s.amount_paise, c.bank_id,
+         case s.category
+           when 'food'         then 'food_delivery'
+           when 'fun'          then 'entertainment'
+           when 'subscription' then 'subscriptions'
+           else s.category
+         end,
+         s.description, s.spent_on, 'migration', s.id, s.created_at, s.created_at
+  from public.spends s
+  join _ledger_users l on l.user_id = s.user_id
+  left join _acct c on c.user_id = s.user_id
+  where not exists (select 1 from _paid_back p where p.spend_id = s.id);
 
--- 5f. Settled lent entries: the money came back. Into Bank when settled after
--- the balance was typed (the old summary added these); otherwise the typed
--- balance already included it, so no account.
-insert into public.transactions (user_id, type, amount_paise, account_id, khata_entry_id,
-                                 description, occurred_on, source, created_at, updated_at)
-select k.user_id, 'repayment_received', k.amount_paise,
-       case when n.at is not null and k.settled_at > n.at then c.bank_id end,
-       k.id, k.person,
-       (k.settled_at at time zone 'Asia/Kolkata')::date, 'migration', k.settled_at, k.settled_at
-from public.khata_entries k
-join _ledger_users l on l.user_id = k.user_id
-left join _anchor n on n.user_id = k.user_id
-left join _acct c on c.user_id = k.user_id
-where k.direction = 'lent' and k.settled_at is not null;
+  -- 5e. Khata: every entry is a lend or borrow with no account, so bank and cash
+  -- stay as they are (the money left or arrived before the ledger existed).
+  insert into public.transactions (user_id, type, amount_paise, khata_entry_id, description,
+                                   note, occurred_on, source, created_at, updated_at)
+  select k.user_id,
+         case k.direction when 'lent' then 'lend' else 'borrow' end,
+         k.amount_paise, k.id, k.person, k.note,
+         (k.created_at at time zone 'Asia/Kolkata')::date, 'migration', k.created_at, k.created_at
+  from public.khata_entries k
+  join _ledger_users l on l.user_id = k.user_id;
 
--- 5g. Settled borrowed entries: paid back. From Bank when the old app logged
--- the "Paid back" spend (that spend is replaced by this row); otherwise no account.
-insert into public.transactions (id, user_id, type, amount_paise, account_id, khata_entry_id,
-                                 description, occurred_on, source, legacy_spend_id,
-                                 created_at, updated_at)
-select coalesce(s.id, gen_random_uuid()), k.user_id, 'repayment_made', k.amount_paise,
-       case when s.id is not null then c.bank_id end,
-       k.id, k.person,
-       (k.settled_at at time zone 'Asia/Kolkata')::date, 'migration', s.id,
-       coalesce(s.created_at, k.settled_at), coalesce(s.created_at, k.settled_at)
-from public.khata_entries k
-join _ledger_users l on l.user_id = k.user_id
-left join _paid_back p on p.entry_id = k.id
-left join public.spends s on s.id = p.spend_id
-left join _acct c on c.user_id = k.user_id
-where k.direction = 'borrowed' and k.settled_at is not null;
+  -- 5f. Settled lent entries: the money came back. Into Bank when settled after
+  -- the balance was typed (the old summary added these); otherwise the typed
+  -- balance already included it, so no account.
+  insert into public.transactions (user_id, type, amount_paise, account_id, khata_entry_id,
+                                   description, occurred_on, source, created_at, updated_at)
+  select k.user_id, 'repayment_received', k.amount_paise,
+         case when n.at is not null and k.settled_at > n.at then c.bank_id end,
+         k.id, k.person,
+         (k.settled_at at time zone 'Asia/Kolkata')::date, 'migration', k.settled_at, k.settled_at
+  from public.khata_entries k
+  join _ledger_users l on l.user_id = k.user_id
+  left join _anchor n on n.user_id = k.user_id
+  left join _acct c on c.user_id = k.user_id
+  where k.direction = 'lent' and k.settled_at is not null;
 
--- 5h. Point logged subscription cycles at their ledger entry.
-update public.subscription_cycles sc
-set transaction_id = t.id
-from public.transactions t
-where t.legacy_spend_id = sc.spend_id and sc.transaction_id is null;
+  -- 5g. Settled borrowed entries: paid back. From Bank when the old app logged
+  -- the "Paid back" spend (that spend is replaced by this row); otherwise no account.
+  insert into public.transactions (id, user_id, type, amount_paise, account_id, khata_entry_id,
+                                   description, occurred_on, source, legacy_spend_id,
+                                   created_at, updated_at)
+  select coalesce(s.id, gen_random_uuid()), k.user_id, 'repayment_made', k.amount_paise,
+         case when s.id is not null then c.bank_id end,
+         k.id, k.person,
+         (k.settled_at at time zone 'Asia/Kolkata')::date, 'migration', s.id,
+         coalesce(s.created_at, k.settled_at), coalesce(s.created_at, k.settled_at)
+  from public.khata_entries k
+  join _ledger_users l on l.user_id = k.user_id
+  left join _paid_back p on p.entry_id = k.id
+  left join public.spends s on s.id = p.spend_id
+  left join _acct c on c.user_id = k.user_id
+  where k.direction = 'borrowed' and k.settled_at is not null;
+
+  -- 5h. Point logged subscription cycles at their ledger entry.
+  update public.subscription_cycles sc
+  set transaction_id = t.id
+  from public.transactions t
+  where t.legacy_spend_id = sc.spend_id and sc.transaction_id is null;
+
+  drop table if exists _ledger_users, _anchor, _acct, _paid_back;
+end
+$copy$;
 
 commit;
