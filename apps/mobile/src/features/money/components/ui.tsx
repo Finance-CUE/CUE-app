@@ -14,10 +14,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { COLORS, FONT, HEADING_FONT, SHAPE, SOFT_SHADOW, useDashboardTheme } from '@/features/money/palette';
 import { useAuthStore } from '@/features/auth/store';
 import { PlusIcon } from './icons';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 export function ScreenScroll({
   children,
@@ -32,7 +31,7 @@ export function ScreenScroll({
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: COLORS.background }}
-      contentContainerStyle={{ paddingTop: insets.top + 16, paddingHorizontal: 24, paddingBottom: 120, gap: 20 }}
+      contentContainerStyle={{ paddingTop: insets.top + 16, paddingHorizontal: SHAPE.sidePadding, paddingBottom: 120, gap: SHAPE.cardGap }}
       keyboardShouldPersistTaps="handled"
       refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} /> : undefined}>
       {children}
@@ -57,7 +56,7 @@ export function ScreenHeader({
   onAvatarPress?: () => void;
   avatarName?: string;
 }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const avatarFill = avatarColor ?? theme.accent;
   const avatarStyle: ViewStyle = {
     width: 44,
@@ -71,13 +70,13 @@ export function ScreenHeader({
   const avatarContent = avatarUri ? (
     <Image source={{ uri: avatarUri }} style={{ width: 44, height: 44 }} />
   ) : (
-    <Text style={{ color: COLORS.white, fontSize: 18, fontWeight: '600' }}>{avatarLetter}</Text>
+    <Text style={{ fontFamily: FONT.semibold, color: COLORS.white, fontSize: 18 }}>{avatarLetter}</Text>
   );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, color: COLORS.muted }}>{eyebrow}</Text>
-        <Text style={{ fontSize: 28, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>{title}</Text>
+        <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.muted }}>{eyebrow}</Text>
+        <Text style={{ fontSize: 28, color: COLORS.text, fontFamily: HEADING_FONT }}>{title}</Text>
       </View>
       {avatarLetter || avatarUri ? (
         onAvatarPress ? (
@@ -112,7 +111,7 @@ export function useProfileAvatar() {
 export function SectionHeader({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.text, fontFamily: HEADING_FONT }}>{title}</Text>
+      <Text style={{ fontSize: 16, color: COLORS.text, fontFamily: HEADING_FONT }}>{title}</Text>
       {right}
     </View>
   );
@@ -126,8 +125,8 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
           backgroundColor: COLORS.card,
           borderColor: COLORS.cardBorder,
           borderWidth: 1,
-          borderRadius: 18,
-          padding: 16,
+          borderRadius: SHAPE.cardRadius,
+          padding: SHAPE.cardPadding,
         },
         style,
       ]}>
@@ -139,7 +138,7 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
 export function EmptyCard({ text }: { text: string }) {
   return (
     <Card>
-      <Text style={{ color: COLORS.muted, fontSize: 14 }}>{text}</Text>
+      <Text style={{ fontFamily: FONT.medium, color: COLORS.muted, fontSize: 14 }}>{text}</Text>
     </Card>
   );
 }
@@ -166,10 +165,10 @@ export function Row({
       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}>
       {left}
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 15, fontWeight: '500', color: COLORS.text }}>{title}</Text>
-        {subtitle ? <Text style={{ fontSize: 12, color: COLORS.muted }}>{subtitle}</Text> : null}
+        <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text }}>{title}</Text>
+        {subtitle ? <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>{subtitle}</Text> : null}
       </View>
-      {amount ? <Text style={{ fontSize: 15, fontWeight: '600', color: COLORS.text }}>{amount}</Text> : null}
+      {amount ? <Text style={{ fontFamily: FONT.semibold, fontSize: 15, color: COLORS.text }}>{amount}</Text> : null}
     </TouchableOpacity>
   );
 }
@@ -194,17 +193,16 @@ export function PrimaryButton({
       onPress={onPress}
       activeOpacity={0.85}
       style={{
-        height: 52,
-        borderRadius: 26,
+        minHeight: 52,
+        borderRadius: SHAPE.buttonRadius,
         backgroundColor: COLORS.text,
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: off ? 0.4 : 1,
-      }}>
+        opacity: off ? 0.4 : 1 }}>
       {loading ? (
         <ActivityIndicator color={COLORS.white} />
       ) : (
-        <Text style={{ color: COLORS.white, fontSize: 16, fontWeight: '600' }}>{label}</Text>
+        <Text style={{ fontFamily: FONT.semibold, color: COLORS.white, fontSize: 16 }}>{label}</Text>
       )}
     </TouchableOpacity>
   );
@@ -217,14 +215,13 @@ export function SecondaryButton({ label, onPress }: { label: string; onPress: ()
       onPress={onPress}
       activeOpacity={0.7}
       style={{
-        height: 52,
-        borderRadius: 26,
+        minHeight: 52,
+        borderRadius: SHAPE.buttonRadius,
         borderWidth: 1,
         borderColor: COLORS.border,
         alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-      <Text style={{ color: COLORS.text, fontSize: 16, fontWeight: '600' }}>{label}</Text>
+        justifyContent: 'center' }}>
+      <Text style={{ fontFamily: FONT.semibold, color: COLORS.text, fontSize: 16 }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -248,7 +245,7 @@ export function TextField({
 }) {
   return (
     <View style={{ gap: 6 }}>
-      <Text style={{ fontSize: 13, color: COLORS.muted }}>{label}</Text>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>{label}</Text>
       <View
         style={{
           flexDirection: 'row',
@@ -258,9 +255,8 @@ export function TextField({
           borderRadius: 14,
           borderWidth: 1,
           borderColor: COLORS.border,
-          backgroundColor: COLORS.white,
-        }}>
-        {prefix ? <Text style={{ fontSize: 16, color: COLORS.muted, marginRight: 6 }}>{prefix}</Text> : null}
+          backgroundColor: COLORS.white }}>
+        {prefix ? <Text style={{ fontFamily: FONT.medium, fontSize: 16, color: COLORS.muted, marginRight: 6 }}>{prefix}</Text> : null}
         <TextInput
           accessibilityLabel={label}
           value={value}
@@ -269,7 +265,7 @@ export function TextField({
           placeholderTextColor={COLORS.muted}
           keyboardType={keyboardType}
           maxLength={maxLength}
-          style={{ flex: 1, fontSize: 16, color: COLORS.text }}
+          style={{ fontFamily: FONT.medium, flex: 1, fontSize: 16, color: COLORS.text }}
         />
       </View>
     </View>
@@ -285,7 +281,7 @@ export function ChipRow<T extends string>({
   value: T | null;
   onChange: (value: T) => void;
 }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
       {options.map((o) => {
@@ -303,9 +299,8 @@ export function ChipRow<T extends string>({
               borderRadius: 18,
               borderWidth: 1,
               borderColor: active ? theme.accent : COLORS.border,
-              backgroundColor: active ? theme.tint : COLORS.card,
-            }}>
-            <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: active ? '600' : '400' }}>{o.label}</Text>
+              backgroundColor: active ? theme.tint : COLORS.card }}>
+            <Text style={{ fontFamily: active ? FONT.semibold : FONT.medium, fontSize: 14, color: active ? theme.accentText : COLORS.text }}>{o.label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -320,7 +315,7 @@ export function Fab({
   onPress: () => void;
   accessibilityLabel?: string;
 }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -329,15 +324,16 @@ export function Fab({
       activeOpacity={0.85}
       style={{
         position: 'absolute',
-        right: 24,
-        bottom: 24,
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: theme.deep,
+        // Spec: 92px from the bottom of the screen; the 64px tab bar sits below this view.
+        right: 26,
+        bottom: SHAPE.fabBottom - 64,
+        width: SHAPE.fab,
+        height: SHAPE.fab,
+        borderRadius: SHAPE.fab / 2,
+        backgroundColor: theme.roles.ink,
         alignItems: 'center',
         justifyContent: 'center',
-      }}>
+        ...SOFT_SHADOW }}>
       <PlusIcon color={COLORS.white} size={24} />
     </TouchableOpacity>
   );

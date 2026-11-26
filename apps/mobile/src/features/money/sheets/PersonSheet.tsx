@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 import { toErrorMessage } from '@/lib/api';
 import { Card, PrimaryButton } from '../components/ui';
 import { formatDateTime } from '../dates';
@@ -68,11 +68,11 @@ export function PersonSheet({
       {person?.entries.map((e) => (
         <Card key={e.id} style={{ gap: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 15, color: COLORS.text }}>{e.direction === 'lent' ? 'You lent' : 'You borrowed'}</Text>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: COLORS.text }}>{formatRupees(e.amount_paise)}</Text>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text }}>{e.direction === 'lent' ? 'You lent' : 'You borrowed'}</Text>
+            <Text style={{ fontFamily: FONT.semibold, fontSize: 15, color: COLORS.text }}>{formatRupees(e.amount_paise)}</Text>
           </View>
-          {e.note ? <Text style={{ fontSize: 13, color: COLORS.text }}>{e.note}</Text> : null}
-          <Text style={{ fontSize: 12, color: COLORS.muted }}>{formatDateTime(e.created_at)}</Text>
+          {e.note ? <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text }}>{e.note}</Text> : null}
+          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>{formatDateTime(e.created_at)}</Text>
           <PrimaryButton
             label={e.direction === 'lent' ? 'Mark received' : 'Mark paid back'}
             onPress={() => markSettled(e)}
@@ -91,9 +91,8 @@ export function PersonSheet({
               borderColor: COLORS.error,
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: busy ? 0.4 : 1,
-            }}>
-            <Text style={{ color: COLORS.error, fontSize: 16, fontWeight: '600' }}>Delete</Text>
+              opacity: busy ? 0.4 : 1 }}>
+            <Text style={{ fontFamily: FONT.semibold, color: COLORS.error, fontSize: 16 }}>Delete</Text>
           </TouchableOpacity>
         </Card>
       ))}

@@ -140,8 +140,12 @@ export type EntryForm = {
 
 export type FieldErrors = Partial<Record<'amount' | 'description' | 'category' | 'account' | 'toAccount' | 'date', string>>;
 
-/** Validation shown under each field (never a pop-up). Empty means it can be saved. */
-export function validate(f: EntryForm, today: string): FieldErrors {
+/**
+ * Validation shown under each field (never a pop-up). Empty means it can be saved.
+ * `allowFuture`: a new expense or income dated after today is saved as a scheduled
+ * payment instead (suggestion 6), so the date may be in the future.
+ */
+export function validate(f: EntryForm, today: string, allowFuture = false): FieldErrors {
   const e: FieldErrors = {};
   if (f.amountPaise === null || f.amountPaise <= 0) e.amount = 'Enter an amount above ₹0.';
   if (f.description.trim().length > 80) e.description = 'Keep it to 80 characters.';
@@ -152,7 +156,7 @@ export function validate(f: EntryForm, today: string): FieldErrors {
     else if (f.toAccountId === f.accountId) e.toAccount = 'Choose two different accounts.';
   }
   if (f.date === null) e.date = 'Enter the date as DD/MM/YYYY.';
-  else if (f.date > today) e.date = "This can't be in the future.";
+  else if (f.date > today && !(allowFuture && f.kind !== 'transfer')) e.date = "This can't be in the future.";
   else if (f.date < '2000-01-01') e.date = 'Choose a date after 2000.';
   return e;
 }
@@ -177,4 +181,38 @@ export function lowBalanceNote(account: Account | undefined, paise: number, fmt:
 /** "Expense saved", "Income saved", "Transfer saved". */
 export function savedLabel(kind: EntryKind): string {
   return `${kind[0].toUpperCase()}${kind.slice(1)} saved`;
+}
+
+// P1: recurring and future entries ------------------------------------------------------
+
+export type RepeatChoice = 'monthly' | 'quarterly' | 'yearly';
+export const REPEAT_OPTIONS: { value: RepeatChoice; label: string }[] = [
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Every 3 months' },
+  { value: 'yearly', label: 'Yearly' },
+];
+
+/** The next date after `iso` for a repeat: one, three or twelve months on, clamped to the month's length. */
+export function nextRepeatDate(iso: string, every: RepeatChoice): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const months = every === 'monthly' ? 1 : every === 'quarterly' ? 3 : 12;
+  const index = y * 12 + (m - 1) + months;
+  const ny = Math.floor(index / 12);
+  const nm = (index % 12) + 1;
+  const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+}
+
+/** The scheduled item a future or repeating entry becomes. */
+export function scheduleKindFor(kind: EntryKind, category: string | null): 'income' | 'subscription' | 'bill' | 'other' {
+  if (kind === 'income') return 'income';
+  if (category === 'subscriptions') return 'subscription';
+  if (category === 'bills') return 'bill';
+  return 'other';
+}
+
+/** "Scheduled for 5 Dec · shows in Coming up". */
+export function scheduledLabel(iso: string): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `Scheduled for ${Number(iso.slice(8, 10))} ${months[Number(iso.slice(5, 7)) - 1]}`;
 }

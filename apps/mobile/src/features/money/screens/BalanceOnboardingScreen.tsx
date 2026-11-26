@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { COLORS, HEADING_FONT, FONT } from '@/features/money/palette';
 import { useAuthStore } from '@/features/auth/store';
 import { newClientKey } from '../accounts';
 import * as moneyApi from '../api';
@@ -84,14 +84,14 @@ export function BalanceOnboardingScreen() {
     <ScreenScroll>
       <View style={{ gap: 6 }}>
         <Text style={{ fontSize: 28, color: COLORS.text, fontFamily: HEADING_FONT }}>Where does your money stand?</Text>
-        <Text style={{ fontSize: 15, color: COLORS.muted }}>
+        <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.muted }}>
           Enter what you have so CUE can show your full picture. No bank login needed. You can add more accounts later.
         </Text>
       </View>
       <BankPicker value={bank?.slug ?? null} onChange={setBank} />
       <TextField label="Bank balance" value={bankAmount} onChangeText={setBankAmount} prefix="₹" placeholder="0" keyboardType="decimal-pad" />
       <TextField label="Cash in hand (optional)" value={cash} onChangeText={setCash} prefix="₹" placeholder="0" keyboardType="decimal-pad" />
-      <Text style={{ fontSize: 13, color: COLORS.muted }}>Balance on</Text>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>Balance on</Text>
       <ChipRow options={DATE_OPTIONS} value={dateChoice} onChange={setDateChoice} />
       {dateChoice === 'other' ? (
         <TextField
@@ -104,7 +104,7 @@ export function BalanceOnboardingScreen() {
         />
       ) : null}
       {dateChoice === 'other' && otherDate.length >= 10 ? <FormError message={dateProblem} /> : null}
-      <Text style={{ fontSize: 12, color: COLORS.muted }}>Spends you add from before this date won't be taken off again.</Text>
+      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>Spends you add from before this date won't be taken off again.</Text>
       <FormError message={error} />
       <PrimaryButton label="Continue" onPress={submit} disabled={!valid || add.isPending} loading={add.isPending} />
       <TouchableOpacity
@@ -114,7 +114,7 @@ export function BalanceOnboardingScreen() {
           router.replace('/');
         }}
         style={{ alignSelf: 'center', paddingVertical: 12 }}>
-        <Text style={{ color: COLORS.muted, fontSize: 14 }}>Sign out</Text>
+        <Text style={{ fontFamily: FONT.medium, color: COLORS.muted, fontSize: 14 }}>Sign out</Text>
       </TouchableOpacity>
     </ScreenScroll>
   );

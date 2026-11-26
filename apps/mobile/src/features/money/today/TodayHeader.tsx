@@ -2,9 +2,8 @@ import { useRouter } from 'expo-router';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { PanResponder, Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { COLORS, FONT, HEADING_FONT, ROLES, useDashboardTheme } from '@/features/money/palette';
 import { useAuthStore } from '@/features/auth/store';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 import { CalendarIcon } from '../components/icons';
 import { greeting, monthRange, toISODate, weekDays, weekStartBack } from '../dates';
 import { useTransactions } from '../hooks';
@@ -14,6 +13,8 @@ import { helloLine, initials, shortDay } from './model';
 const DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export const MAX_WEEKS_BACK = 52;
+/** Coming up looks 30 days ahead, so the strip does too. */
+export const MAX_WEEKS_AHEAD = 4;
 
 /** Dates (ISO) in start..end that have at least one entry, for the 4px dots. */
 function useEntryDates(start: string, end: string): Set<string> {
@@ -23,8 +24,9 @@ function useEntryDates(start: string, end: string): Set<string> {
 
 /**
  * Spec 4.1: greeting, "Hello, Asha.", avatar to the You tab, a seven-day strip
- * (swipe or arrows move a week), Calendar and Today chips. Future dates stay
- * closed until Coming up (P1) can show what is due on them.
+ * (swipe or arrows move a week), Calendar and Today chips. Future dates up to
+ * four weeks ahead show only what is due that day (suggestion 6); a dot marks
+ * days with a payment due.
  */
 export function TodayHeader({
   today,
@@ -33,24 +35,28 @@ export function TodayHeader({
   onSelect,
   onWeeksBack,
   onSearch,
+  dueDates,
 }: {
   today: Date;
   selected: string;
+  /** Negative for weeks ahead. */
   weeksBack: number;
   onSelect: (iso: string) => void;
   onWeeksBack: (weeksBack: number) => void;
   /** Opens Transaction history with the search field focused. */
   onSearch: () => void;
+  /** Days with a payment due, dotted on future days. */
+  dueDates?: Set<string>;
 }) {
   const router = useRouter();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const fullName = useAuthStore((s) => s.user?.full_name)?.trim() ?? '';
   const [calendar, setCalendar] = useState(false);
   const todayISO = toISODate(today);
   const days = weekDays(weekStartBack(today, weeksBack));
   const dots = useEntryDates(toISODate(days[0]), toISODate(days[6]));
 
-  const move = (delta: number) => onWeeksBack(Math.min(MAX_WEEKS_BACK, Math.max(0, weeksBack + delta)));
+  const move = (delta: number) => onWeeksBack(Math.min(MAX_WEEKS_BACK, Math.max(-MAX_WEEKS_AHEAD, weeksBack + delta)));
   // The swipe handler is made once; it reads the latest `move` through this ref.
   const moveRef = useRef(move);
   useEffect(() => {
@@ -71,10 +77,10 @@ export function TodayHeader({
     <View style={{ gap: 14 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 12.5, color: COLORS.muted }}>
+          <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.muted }}>
             {greeting(new Date()) /* needs the hour; useToday only tracks the day */},
           </Text>
-          <Text style={{ fontSize: 20, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>
+          <Text style={{ fontSize: 20, color: COLORS.text, fontFamily: HEADING_FONT }}>
             {helloLine(fullName)}
           </Text>
         </View>
@@ -86,7 +92,7 @@ export function TodayHeader({
           style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
           <View
             style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: theme.tint, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: theme.accentText }}>{initials(fullName)}</Text>
+            <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>{initials(fullName)}</Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -102,9 +108,8 @@ export function TodayHeader({
               <TouchableOpacity
                 key={iso}
                 accessibilityRole="button"
-                accessibilityLabel={`${shortDay(iso)}${dots.has(iso) ? ', has entries' : ''}`}
-                accessibilityState={{ selected: isSelected, disabled: future }}
-                disabled={future}
+                accessibilityLabel={`${shortDay(iso)}${dots.has(iso) ? ', has entries' : ''}${future && dueDates?.has(iso) ? ', payment due' : ''}`}
+                accessibilityState={{ selected: isSelected }}
                 onPress={() => onSelect(iso)}
                 activeOpacity={0.7}
                 style={{
@@ -113,22 +118,21 @@ export function TodayHeader({
                   paddingVertical: 6,
                   minHeight: 56,
                   borderRadius: 14,
-                  backgroundColor: isSelected ? theme.accent : 'transparent',
-                  opacity: future ? 0.35 : 1,
-                }}>
-                <Text style={{ fontSize: 11, color: isSelected ? COLORS.white : COLORS.muted }}>{DAY[i]}</Text>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: isSelected ? COLORS.white : COLORS.text }}>
+                  backgroundColor: isSelected ? theme.accent : 'transparent' }}>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: isSelected ? COLORS.white : COLORS.muted }}>{DAY[i]}</Text>
+                <Text style={{ fontFamily: FONT.semibold, fontSize: 15, color: isSelected ? COLORS.white : COLORS.text }}>
                   {d.getDate()}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 3, height: 5, marginTop: 2 }}>
                   {iso === todayISO ? <Dot color={isSelected ? COLORS.white : theme.accent} /> : null}
                   {dots.has(iso) ? <Dot color={isSelected ? COLORS.white : COLORS.muted} /> : null}
+                  {future && dueDates?.has(iso) ? <Dot color={isSelected ? COLORS.white : ROLES.attention} /> : null}
                 </View>
               </TouchableOpacity>
             );
           })}
         </View>
-        <Arrow label="Next week" glyph="›" disabled={weeksBack === 0} onPress={() => move(-1)} />
+        <Arrow label="Next week" glyph="›" disabled={weeksBack <= -MAX_WEEKS_AHEAD} onPress={() => move(-1)} />
       </View>
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -165,7 +169,7 @@ export function TodayHeader({
 
 /** "Viewing Tue 11 Nov · Back to today": sticky under the header on a past date. */
 export function PastDateBanner({ selected, onBack }: { selected: string; onBack: () => void }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -173,8 +177,8 @@ export function PastDateBanner({ selected, onBack }: { selected: string; onBack:
       onPress={onBack}
       activeOpacity={0.8}
       style={{ alignSelf: 'center', minHeight: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: theme.tint, justifyContent: 'center' }}>
-      <Text style={{ fontSize: 13, color: theme.accentText }}>
-        Viewing {shortDay(selected)} · <Text style={{ fontWeight: '700' }}>Back to today</Text>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: theme.accentText }}>
+        Viewing {shortDay(selected)} · <Text style={{ fontFamily: FONT.semibold }}>Back to today</Text>
       </Text>
     </TouchableOpacity>
   );
@@ -185,7 +189,7 @@ function Dot({ color }: { color: string }) {
 }
 
 function Arrow({ label, glyph, disabled, onPress }: { label: string; glyph: string; disabled: boolean; onPress: () => void }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -194,13 +198,13 @@ function Arrow({ label, glyph, disabled, onPress }: { label: string; glyph: stri
       disabled={disabled}
       onPress={onPress}
       style={{ width: 28, height: 44, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1 }}>
-      <Text style={{ fontSize: 22, color: theme.accentText, fontWeight: '600' }}>{glyph}</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 22, color: theme.accentText }}>{glyph}</Text>
     </TouchableOpacity>
   );
 }
 
 function IconChip({ label, onPress, icon }: { label: string; onPress: () => void; icon?: ReactNode }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -214,10 +218,9 @@ function IconChip({ label, onPress, icon }: { label: string; onPress: () => void
         gap: 6,
         paddingHorizontal: 12,
         borderRadius: 16,
-        backgroundColor: theme.tint,
-      }}>
+        backgroundColor: theme.tint }}>
       {icon}
-      <Text style={{ fontSize: 13, fontWeight: '600', color: theme.accentText }}>{label}</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 13, color: theme.accentText }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -236,7 +239,7 @@ function CalendarSheet({
   onClose: () => void;
   onPick: (iso: string) => void;
 }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const [monthsBack, setMonthsBack] = useState(0);
   const first = new Date(today.getFullYear(), today.getMonth() - monthsBack, 1);
   const { start, end } = monthRange(first);
@@ -257,7 +260,7 @@ function CalendarSheet({
       </View>
       <View style={{ flexDirection: 'row' }}>
         {DAY.map((d) => (
-          <Text key={d} style={{ flex: 1, textAlign: 'center', fontSize: 11, color: COLORS.muted }}>
+          <Text key={d} style={{ fontFamily: FONT.regular, flex: 1, textAlign: 'center', fontSize: 11, color: COLORS.muted }}>
             {d}
           </Text>
         ))}
@@ -284,9 +287,8 @@ function CalendarSheet({
                   borderRadius: 18,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: isSelected ? theme.accent : 'transparent',
-                }}>
-                <Text style={{ fontSize: 14, fontWeight: iso === todayISO ? '700' : '500', color: isSelected ? COLORS.white : COLORS.text }}>
+                  backgroundColor: isSelected ? theme.accent : 'transparent' }}>
+                <Text style={{ fontFamily: FONT.semibold, fontSize: 15, color: isSelected ? COLORS.white : COLORS.text }}>
                   {d.getDate()}
                 </Text>
               </View>

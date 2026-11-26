@@ -9,9 +9,11 @@ import {
   ThemeProvider,
 } from 'expo-router';
 
+import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
@@ -19,11 +21,14 @@ import { AppProviders } from '@/providers/AppProviders';
 import { useAuthStore } from '@/features/auth/store';
 import { useAssessmentStore } from '@/features/assessment/store';
 import { usePrivacyStore } from '@/features/money/privacy';
+import { FONT_ASSETS } from '@/features/theme/fonts';
 
 const CUE_BACKGROUND = '#FAF7F2';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  // Dashboard fonts. Text falls back to the system font until they load (or if they fail).
+  useFonts(FONT_ASSETS);
   const restore = useAuthStore((state) => state.restore);
   const hydrateAssessment = useAssessmentStore((state) => state.hydrate);
 
@@ -48,6 +53,8 @@ export default function RootLayout() {
   }, []);
 
   return (
+    // Swipe actions (Coming up rows) need the gesture root.
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
       <AppProviders>
         <ThemeProvider
@@ -69,5 +76,6 @@ export default function RootLayout() {
         </ThemeProvider>
       </AppProviders>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

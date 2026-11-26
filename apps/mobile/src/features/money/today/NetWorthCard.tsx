@@ -1,8 +1,8 @@
 import type { UseQueryResult } from '@tanstack/react-query';
 import { Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
+import { COLORS, FONT, HEADING_FONT, TABULAR, TYPE, useDashboardTheme } from '@/features/money/palette';
+import { MiniLine } from '../charts/MiniLine';
 import { EyeIcon, EyeOffIcon, WalletIcon } from '../components/icons';
 import { useSlow } from '../hooks';
 import { usePrivacyStore, useRupees } from '../privacy';
@@ -15,7 +15,7 @@ export const WAKING = 'Waking CUE up, this can take up to a minute';
 /** "Updating…" while a refetch runs, otherwise "Updated 10:42 am". */
 export function Freshness({ query }: { query: UseQueryResult<unknown> }) {
   const text = query.isFetching ? 'Updating…' : `Updated ${shortTime(query.dataUpdatedAt)}`;
-  return <Text style={{ fontSize: 11.5, color: COLORS.muted }}>{text}</Text>;
+  return <Text style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.muted }}>{text}</Text>;
 }
 
 /**
@@ -30,15 +30,23 @@ export function NetWorthCard({
   onUpdateBalance,
   onAccounts,
   onAddAccount,
+  spark,
+  onSpark,
+  leftToSpend,
 }: {
   query: UseQueryResult<NetWorth>;
   onBreakdown: () => void;
   onUpdateBalance: () => void;
   onAccounts: () => void;
   onAddAccount: () => void;
+  /** The last 30 days of net worth (suggestion 9); tapping opens the chart at 30 days. */
+  spark?: number[];
+  onSpark?: () => void;
+  /** "₹1,240 free to spend today" once a salary date exists; null hides it. */
+  leftToSpend?: string | null;
 }) {
   const formatRupees = useRupees();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const hidden = usePrivacyStore((s) => s.hidden);
   const toggle = usePrivacyStore((s) => s.toggle);
   const slow = useSlow(query.isPending);
@@ -64,7 +72,7 @@ export function NetWorthCard({
         ) : (
           <>
             <Skeleton lines={[{ width: '60%', height: 36 }, { width: '40%', height: 12 }, { width: '100%', height: 40 }]} />
-            {slow ? <Text style={{ fontSize: 12.5, color: COLORS.muted }}>{WAKING}</Text> : null}
+            {slow ? <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.muted }}>{WAKING}</Text> : null}
           </>
         )}
       </TodayCard>
@@ -87,20 +95,23 @@ export function NetWorthCard({
   const change = changeLine(nw.change_this_month_paise, formatRupees);
   return (
     <TodayCard title={title} right={eye}>
-      <TouchableOpacity
-        accessibilityRole="button"
-        accessibilityLabel={`${netWorthSentence(nw, formatRupees)}. Opens the breakdown.`}
-        onPress={onBreakdown}
-        activeOpacity={0.7}
-        style={{ gap: 4 }}>
-        <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          style={{ fontSize: 40, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>
-          {formatRupees(nw.net_worth_paise)}
-        </Text>
-        {change ? <Text style={{ fontSize: 12.5, color: COLORS.muted }}>{change.text}</Text> : null}
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`${netWorthSentence(nw, formatRupees)}. Opens the breakdown.`}
+          onPress={onBreakdown}
+          activeOpacity={0.7}
+          style={{ gap: 4, flex: 1 }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ ...TYPE.hero, color: COLORS.text }}>
+            {formatRupees(nw.net_worth_paise)}
+          </Text>
+          {change ? <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.muted }}>{change.text}</Text> : null}
+        </TouchableOpacity>
+        {spark && spark.length > 1 ? <MiniLine values={spark} onPress={onSpark} /> : null}
+      </View>
+      {leftToSpend ? (
+        <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.muted, marginTop: -4 }}>{leftToSpend}</Text>
+      ) : null}
 
       <View style={{ height: 1, backgroundColor: COLORS.cardBorder }} />
       <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -122,7 +133,7 @@ function Figure({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flex: 1, gap: 2 }}>
       <Eyebrow>{label}</Eyebrow>
-      <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 22, color: COLORS.text, fontFamily: HEADING_FONT }}>
+      <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 22, color: COLORS.text, fontFamily: HEADING_FONT, ...TABULAR }}>
         {value}
       </Text>
     </View>

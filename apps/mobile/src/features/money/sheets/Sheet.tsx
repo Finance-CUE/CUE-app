@@ -9,7 +9,9 @@ import {
   View,
 } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+import { COLORS, HEADING_FONT, FONT } from '@/features/money/palette';
 import { toErrorMessage } from '@/lib/api';
 
 export function Sheet({
@@ -33,6 +35,8 @@ export function Sheet({
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      {/* A modal is its own window on Android: swipe rows inside need their own gesture root. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1, justifyContent: 'flex-end' }}>
@@ -51,32 +55,32 @@ export function Sheet({
             borderTopRightRadius: 22,
             paddingHorizontal: 24,
             paddingTop: 10,
-            paddingBottom: 28,
-          }}>
+            paddingBottom: 28 }}>
           <View
             style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.border, marginBottom: 14 }}
           />
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16 }}>
             <View style={{ gap: 4 }}>
-              <Text style={{ fontSize: 22, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>{title}</Text>
-              {subtitle ? <Text style={{ fontSize: 14, color: COLORS.muted }}>{subtitle}</Text> : null}
+              <Text style={{ fontSize: 22, color: COLORS.text, fontFamily: HEADING_FONT }}>{title}</Text>
+              {subtitle ? <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.muted }}>{subtitle}</Text> : null}
             </View>
             {children}
           </ScrollView>
           {footer ? <View style={{ paddingTop: 12, gap: 8 }}>{footer}</View> : null}
         </View>
       </KeyboardAvoidingView>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
 export function FormError({ message }: { message: string | null }) {
-  return message ? <Text style={{ color: COLORS.error, fontSize: 14 }}>{message}</Text> : null;
+  return message ? <Text style={{ fontFamily: FONT.medium, color: COLORS.error, fontSize: 14 }}>{message}</Text> : null;
 }
 
 /** An error under its field, 11.5px (spec Quick Add validation). */
 export function FieldError({ message }: { message?: string | null }) {
-  return message ? <Text style={{ color: COLORS.error, fontSize: 11.5, marginTop: -8 }}>{message}</Text> : null;
+  return message ? <Text style={{ fontFamily: FONT.regular, color: COLORS.error, fontSize: 11.5, marginTop: -8 }}>{message}</Text> : null;
 }
 
 /**

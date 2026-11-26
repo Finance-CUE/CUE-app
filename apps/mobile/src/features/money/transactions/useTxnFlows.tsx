@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 import { Toast, type ToastMessage } from '../components/Toast';
 import { PrimaryButton, SecondaryButton } from '../components/ui';
 import { formatDate, formatDateTime } from '../dates';
 import { useDeleteTransaction, useRestoreTransaction } from '../hooks';
 import { useRupees } from '../privacy';
-import { categoryName, savedLabel } from '../quickAdd/model';
+import { categoryName, savedLabel, scheduledLabel } from '../quickAdd/model';
 import { type QuickAddChoice, QuickAddSheet, type Saved, type Seed } from '../quickAdd/QuickAddSheet';
 import { FormError, Sheet } from '../sheets/Sheet';
 import { UpdateBalanceSheet } from '../sheets/UpdateBalanceSheet';
@@ -55,13 +55,19 @@ export function useTxnFlows({
   const openBalance = (account: string | null, reconcile = false) => setOpen({ name: 'balance', account, reconcile });
 
   // "Expense saved · Undo", plus the low-balance note when an account went below ₹0.
-  const onSaved = ({ txn, kind, lowNote, accountId, edited }: Saved) =>
+  const onSaved = ({ txn, kind, lowNote, accountId, edited, scheduledFor }: Saved) => {
+    if (!txn) {
+      // A future date became a scheduled payment: nothing was spent, so there is nothing to undo here.
+      setToast({ id: `scheduled:${Date.now()}`, text: `${scheduledLabel(scheduledFor ?? '')} · see Coming up` });
+      return;
+    }
     setToast({
       id: `${txn.id}:${Date.now()}`,
       text: edited ? `${savedLabel(kind).replace('saved', 'updated')}` : savedLabel(kind),
       ...(edited ? {} : { action: { label: 'Undo', onPress: () => void del.mutateAsync(txn.id).catch(() => undefined) } }),
       ...(lowNote ? { note: { text: lowNote, action: { label: 'Update', onPress: () => openBalance(accountId) } } } : {}),
     });
+  };
 
   // Delete asks first; afterwards a 5-second Undo brings it back.
   const confirmDelete = (txn: LedgerTxn) =>
@@ -175,16 +181,16 @@ function TransactionSheet({
           .filter((l): l is [string, string] => Boolean(l[1]))
           .map(([label, value]) => (
             <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-              <Text style={{ fontSize: 14, color: COLORS.muted }}>{label}</Text>
-              <Text style={{ fontSize: 14, color: COLORS.text, flexShrink: 1, textAlign: 'right' }}>{value}</Text>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.muted }}>{label}</Text>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text, flexShrink: 1, textAlign: 'right' }}>{value}</Text>
             </View>
           ))}
       </View>
       {khata ? (
-        <Text style={{ fontSize: 13, color: COLORS.muted }}>Lending, borrowing and paying back are changed in Khata.</Text>
+        <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>Lending, borrowing and paying back are changed in Khata.</Text>
       ) : null}
       {txn.type === 'opening' ? (
-        <Text style={{ fontSize: 13, color: COLORS.muted }}>
+        <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>
           To correct an opening balance, use Update balance. History is never rewritten.
         </Text>
       ) : null}
@@ -195,7 +201,7 @@ function TransactionSheet({
         <Text
           accessibilityRole="button"
           onPress={deleting ? undefined : () => onDelete(txn)}
-          style={{ textAlign: 'center', fontSize: 15, fontWeight: '600', color: COLORS.error, paddingVertical: 12 }}>
+          style={{ fontFamily: FONT.semibold, textAlign: 'center', fontSize: 15, color: COLORS.error, paddingVertical: 12 }}>
           {deleting ? 'Deleting…' : 'Delete'}
         </Text>
       ) : null}

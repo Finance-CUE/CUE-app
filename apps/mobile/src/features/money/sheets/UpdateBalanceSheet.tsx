@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 import { newClientKey } from '@/features/money/accounts';
 import { ChipRow, PrimaryButton, SecondaryButton, TextField } from '@/features/money/components/ui';
 import { toISODate } from '@/features/money/dates';
@@ -104,17 +104,17 @@ export function UpdateBalanceSheet({
         keyboardType="decimal-pad"
       />
       {preview ? (
-        <Text style={{ fontSize: 13, color: COLORS.muted }}>{unchanged ? 'That matches what CUE shows.' : preview.text}</Text>
+        <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>{unchanged ? 'That matches what CUE shows.' : preview.text}</Text>
       ) : null}
       {!unchanged ? (
         <View style={{ gap: 8 }}>
-          <Text style={{ fontSize: 13, color: COLORS.muted }}>What's the difference from?</Text>
+          <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>What's the difference from?</Text>
           <ChipRow options={ADJUST_REASONS} value={reason} onChange={setReason} />
         </View>
       ) : null}
       {offerExpense ? (
         <View style={{ gap: 8 }}>
-          <Text style={{ fontSize: 13, color: COLORS.muted }}>
+          <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>
             If you know what it was, adding it as an expense keeps your spending right.
           </Text>
           <SecondaryButton label="Add it as an expense instead" onPress={onAddExpense} />

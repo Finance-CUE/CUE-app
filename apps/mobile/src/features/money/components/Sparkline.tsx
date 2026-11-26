@@ -1,10 +1,9 @@
 import { TouchableOpacity, View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, useDashboardTheme } from '@/features/money/palette';
 import { countPoints, linePoints } from '../chart';
 import type { TrendPoint } from '../types';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 /**
  * Balance line (purple) and spending line (peach). A single known balance (the first
@@ -21,7 +20,7 @@ export function Sparkline({
   height?: number;
   onPress?: () => void;
 }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const balances = points.map((p) => p.balance_paise);
   const known = countPoints(balances);
   const hasBalance = known > 1;

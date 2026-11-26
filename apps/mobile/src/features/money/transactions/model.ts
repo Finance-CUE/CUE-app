@@ -116,16 +116,17 @@ export function dayGroups(txns: LedgerTxn[]): DayGroup[] {
   return [...groups.values()];
 }
 
-export type TypeFilter = 'all' | 'expense' | 'income' | 'transfer' | 'khata' | 'adjustment';
+export type TypeFilter = 'all' | 'expense' | 'income' | 'transfer' | 'khata' | 'recurring' | 'adjustment';
 export const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'expense', label: 'Expenses' },
   { value: 'income', label: 'Income' },
   { value: 'transfer', label: 'Transfers' },
   { value: 'khata', label: 'Khata' },
+  { value: 'recurring', label: 'Recurring' },
   { value: 'adjustment', label: 'Adjustments' },
 ];
-const TYPES: Record<Exclude<TypeFilter, 'all'>, TxnType[]> = {
+const TYPES: Record<Exclude<TypeFilter, 'all' | 'recurring'>, TxnType[]> = {
   expense: ['expense', 'refund'],
   income: ['income'],
   transfer: ['transfer'],
@@ -145,7 +146,8 @@ export function applyFilters(txns: LedgerTxn[], f: Filters): LedgerTxn[] {
   const amountQuery = /^\d+(\.\d{0,2})?$/.test(digits) ? digits : null;
   return txns.filter((t) => {
     if (t.deleted) return false;
-    if (f.type !== 'all' && !TYPES[f.type].includes(t.type)) return false;
+    // Recurring: entries that belong to a scheduled item (marked paid, or saved with Recurring on).
+    if (f.type === 'recurring' ? !t.schedule_id : f.type !== 'all' && !TYPES[f.type].includes(t.type)) return false;
     if (f.accountId && t.account_id !== f.accountId && t.to_account_id !== f.accountId) return false;
     if (f.category && t.category !== f.category) return false;
     if (!q) return true;

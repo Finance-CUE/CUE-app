@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 import { type Bank, bankBySlug } from '@/features/money/banks';
 import { PrimaryButton, TextField } from '@/features/money/components/ui';
 import { toISODate } from '@/features/money/dates';
@@ -49,7 +49,7 @@ export function EditAccountSheet({ account, onClose }: { account: Account | null
     <Sheet visible onClose={onClose} title="Edit account" subtitle={kindLabel(account.kind)}>
       <TextField label="Nickname" value={name} onChangeText={setName} maxLength={40} />
       {account.kind === 'cash' ? null : <BankPicker value={bank?.slug ?? null} onChange={setBank} />}
-      <Text style={{ fontSize: 12, color: COLORS.muted }}>
+      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>
         The account type can't change. To correct the balance, use Update balance.
       </Text>
       <FormError message={error} />

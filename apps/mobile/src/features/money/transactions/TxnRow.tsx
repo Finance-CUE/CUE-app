@@ -1,7 +1,6 @@
 import { Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
+import { COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
 import { CategoryIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { useRupees } from '../privacy';
 import type { Account, LedgerTxn } from '../types';
@@ -26,7 +25,7 @@ const POSITIVE_INK = '#56704D';
 
 /** One transaction row, as the spec's "Row by type" table shows it. */
 export function TxnRow({ txn, accounts, onPress }: { txn: LedgerTxn; accounts: Map<string, Account>; onPress: () => void }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const formatRupees = useRupees();
   const row = rowFor(txn, accounts, formatRupees);
   const tone: Record<Tone, string> = { ink: COLORS.text, positive: POSITIVE_INK, soft: COLORS.muted };
@@ -49,14 +48,14 @@ export function TxnRow({ txn, accounts, onPress }: { txn: LedgerTxn; accounts: M
         {icon}
       </View>
       <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '500', color: COLORS.text }}>
+        <Text numberOfLines={1} style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text }}>
           {row.title}
         </Text>
-        <Text numberOfLines={1} style={{ fontSize: 11.5, color: COLORS.muted }}>
+        <Text numberOfLines={1} style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.muted }}>
           {row.subtitle}
         </Text>
       </View>
-      <Text style={{ fontSize: 14, fontWeight: '600', color: tone[row.tone] }}>{row.amount}</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: tone[row.tone] }}>{row.amount}</Text>
     </TouchableOpacity>
   );
 }

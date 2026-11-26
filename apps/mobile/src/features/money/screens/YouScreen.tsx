@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Alert, AppState, Linking, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 import { fetchResult } from '@/features/assessment/api';
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { useAuthStore } from '@/features/auth/store';
 import { Sparkline } from '../components/Sparkline';
 import { Card, ScreenHeader, ScreenScroll, SecondaryButton, useProfileAvatar } from '../components/ui';
@@ -15,7 +15,6 @@ import { useNudgePlan, useNudges, useSaveNudges, useSpends, useToday, useTrend }
 import { notificationsBlocked } from '../notifications';
 import { weeklyReflection } from '../reflection';
 import type { Nudges, PlannedNudge } from '../types';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 const NUDGE_ROWS: { key: keyof Nudges; title: string; subtitle: string }[] = [
   { key: 'pre_spend', title: 'Pre-spend pause', subtitle: 'Before unplanned spends' },
@@ -62,7 +61,7 @@ function useNotificationsBlocked(): boolean {
 export function YouScreen() {
   // Masked while the eye toggle hides amounts.
   const formatRupees = useRupees();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
@@ -120,35 +119,35 @@ export function YouScreen() {
       <Card style={{ borderLeftWidth: 4, borderLeftColor: theme.accent }}>
         {result.isError ? (
           <>
-            <Text style={{ fontSize: 15, color: COLORS.muted }}>Could not load your pattern</Text>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.muted }}>Could not load your pattern</Text>
             <TouchableOpacity accessibilityRole="button" onPress={() => result.refetch()} style={{ paddingVertical: 8 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>Try again</Text>
+              <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>Try again</Text>
             </TouchableOpacity>
           </>
         ) : primary ? (
           <>
-            <Text style={{ fontSize: 11, letterSpacing: 1, color: COLORS.muted }}>THE PATTERN CUE CURRENTLY SEES</Text>
+            <Text style={{ fontFamily: FONT.regular, fontSize: 11, letterSpacing: 1, color: COLORS.muted }}>THE PATTERN CUE CURRENTLY SEES</Text>
             <Text style={{ fontSize: 24, color: COLORS.text, fontFamily: HEADING_FONT, marginTop: 6 }}>
               {primary.name}
             </Text>
             {result.data?.secondary ? (
-              <Text style={{ fontSize: 14, color: COLORS.text, marginTop: 4 }}>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text, marginTop: 4 }}>
                 with {result.data.secondary.name} and {result.data.tertiary.name} in the mix
               </Text>
             ) : null}
-            {taken ? <Text style={{ fontSize: 13, color: COLORS.muted, marginTop: 6 }}>{taken}</Text> : null}
+            {taken ? <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted, marginTop: 6 }}>{taken}</Text> : null}
             <TouchableOpacity
               accessibilityRole="button"
               onPress={() => router.push('/profile' as Href)}
               hitSlop={8}
               style={{ paddingTop: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>
+              <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>
                 See your full profile ›
               </Text>
             </TouchableOpacity>
           </>
         ) : result.data === null ? (
-          <Text style={{ fontSize: 15, color: COLORS.muted }}>Take the assessment to see your pattern</Text>
+          <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.muted }}>Take the assessment to see your pattern</Text>
         ) : null}
       </Card>
 
@@ -158,19 +157,19 @@ export function YouScreen() {
         <Text style={{ fontSize: 18, color: COLORS.text, marginBottom: 6, fontFamily: HEADING_FONT }}>Nudge preferences</Text>
         {blocked ? (
           <View style={{ backgroundColor: COLORS.peachTint, borderRadius: 12, padding: 12, marginBottom: 6, gap: 6 }}>
-            <Text style={{ fontSize: 14, color: COLORS.text }}>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text }}>
               Notifications are off for CUE, so nudges and subscription reminders can't reach you.
             </Text>
             <TouchableOpacity accessibilityRole="button" onPress={() => Linking.openSettings()} hitSlop={8}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>Open settings</Text>
+              <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>Open settings</Text>
             </TouchableOpacity>
           </View>
         ) : null}
         {NUDGE_ROWS.map((r) => (
           <View key={r.key} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontWeight: '500', color: COLORS.text }}>{r.title}</Text>
-              <Text style={{ fontSize: 12, color: COLORS.muted }}>{subtitles[r.key] ?? r.subtitle}</Text>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text }}>{r.title}</Text>
+              <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>{subtitles[r.key] ?? r.subtitle}</Text>
             </View>
             <Switch
               value={pending[r.key] ?? nudges.data?.[r.key] ?? true}
@@ -191,7 +190,7 @@ export function YouScreen() {
           router.replace('/');
         }}
         style={{ alignSelf: 'center', paddingVertical: 12 }}>
-        <Text style={{ fontSize: 15, color: COLORS.muted }}>Sign out</Text>
+        <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.muted }}>Sign out</Text>
       </TouchableOpacity>
     </ScreenScroll>
   );

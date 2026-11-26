@@ -1,12 +1,12 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
+import { COLORS, FONT, SHAPE, TYPE, useDashboardTheme } from '@/features/money/palette';
 
 /** Eyebrow label: small capitals, as on "YOUR NET WORTH". */
 export function Eyebrow({ children }: { children: string }) {
-  return <Text style={{ fontSize: 11, letterSpacing: 1.2, color: COLORS.muted, fontWeight: '600' }}>{children}</Text>;
+  // Spec: ink-faint; ink-soft here because people read these labels (suggestion 25).
+  return <Text style={{ ...TYPE.eyebrow, color: COLORS.muted }}>{children}</Text>;
 }
 
 /** Grey blocks in the card's own shape with a slow shimmer; never placeholder numbers. */
@@ -33,12 +33,12 @@ export function Skeleton({ lines }: { lines: { width: ViewStyle['width']; height
 
 /** "Couldn't load your accounts." with Try again; the card keeps its title. */
 export function CardError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <View style={{ gap: 6 }}>
-      <Text style={{ fontSize: 13, color: COLORS.muted }}>{message}</Text>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>{message}</Text>
       <TouchableOpacity accessibilityRole="button" onPress={onRetry} hitSlop={10} style={{ alignSelf: 'flex-start' }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>Try again</Text>
+        <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>Try again</Text>
       </TouchableOpacity>
     </View>
   );
@@ -59,7 +59,7 @@ export function EmptyState({
   return (
     <View style={{ alignItems: 'center', gap: 10, paddingVertical: 8 }}>
       {icon}
-      <Text style={{ fontSize: 13, color: COLORS.muted, textAlign: 'center' }}>{text}</Text>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted, textAlign: 'center' }}>{text}</Text>
       {action && onAction ? <LightButton label={action} onPress={onAction} /> : null}
     </View>
   );
@@ -67,21 +67,21 @@ export function EmptyState({
 
 /** "View breakdown": a light filled button. */
 export function LightButton({ label, onPress }: { label: string; onPress: () => void }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <TouchableOpacity
       accessibilityRole="button"
       onPress={onPress}
       activeOpacity={0.7}
-      style={{ minHeight: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: theme.tint, justifyContent: 'center' }}>
-      <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>{label}</Text>
+      style={{ minHeight: 44, paddingHorizontal: 16, borderRadius: SHAPE.buttonRadius, backgroundColor: theme.tint, justifyContent: 'center' }}>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 /** "Update balance", "Accounts": ghost chips. */
 export function GhostChip({ label, onPress }: { label: string; onPress: () => void }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -90,12 +90,11 @@ export function GhostChip({ label, onPress }: { label: string; onPress: () => vo
       style={{
         minHeight: 44,
         paddingHorizontal: 14,
-        borderRadius: 22,
+        borderRadius: SHAPE.buttonRadius,
         borderWidth: 1,
         borderColor: COLORS.border,
-        justifyContent: 'center',
-      }}>
-      <Text style={{ fontSize: 14, fontWeight: '500', color: theme.accentText }}>{label}</Text>
+        justifyContent: 'center' }}>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: theme.accentText }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -115,13 +114,13 @@ export function TodayCard({
   return (
     <View
       style={[
-        { backgroundColor: COLORS.card, borderColor: COLORS.cardBorder, borderWidth: 1, borderRadius: 20, padding: 18, gap: 12 },
+        { backgroundColor: COLORS.card, borderColor: COLORS.cardBorder, borderWidth: 1, borderRadius: SHAPE.cardRadius, padding: SHAPE.cardPadding, gap: 12 },
         style,
       ]}>
       {title || right ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           {typeof title === 'string' ? (
-            <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.text, fontFamily: HEADING_FONT }}>{title}</Text>
+            <Text style={{ ...TYPE.sectionTitle, color: COLORS.text }}>{title}</Text>
           ) : (
             title
           )}

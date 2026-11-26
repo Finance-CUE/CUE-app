@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 
 /**
  * Brand-kit note colours (spec section 2): note-soft is sky at 15% on white,
@@ -18,9 +18,9 @@ const NOTE_INK = '#2F4157';
 export function NoteCard() {
   return (
     <View accessible style={{ backgroundColor: NOTE_SOFT, borderRadius: 18, padding: 16, gap: 6 }}>
-      <Text style={{ fontSize: 11, letterSpacing: 1.2, fontWeight: '600', color: NOTE_INK }}>A NOTE FROM CUE</Text>
-      <Text style={{ fontSize: 13.3, fontWeight: '700', color: COLORS.text }}>CUE is getting to know your patterns.</Text>
-      <Text style={{ fontSize: 12.8, color: NOTE_INK }}>Your first note arrives after a week of logging.</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 11, letterSpacing: 1.2, color: NOTE_INK }}>A NOTE FROM CUE</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 13.3, color: COLORS.text }}>CUE is getting to know your patterns.</Text>
+      <Text style={{ fontFamily: FONT.regular, fontSize: 12.8, color: NOTE_INK }}>Your first note arrives after a week of logging.</Text>
     </View>
   );
 }

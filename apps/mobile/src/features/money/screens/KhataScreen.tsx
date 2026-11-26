@@ -2,19 +2,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { Card, EmptyCard, Fab, Row, ScreenHeader, ScreenScroll, SectionHeader, useProfileAvatar } from '../components/ui';
 import { useRupees } from '../privacy';
 import { useKhata } from '../hooks';
 import { personBalances, type PersonBalance } from '../khata';
 import { KhataSheet } from '../sheets/KhataSheet';
 import { PersonSheet } from '../sheets/PersonSheet';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 export function KhataScreen() {
   // Masked while the eye toggle hides amounts.
   const formatRupees = useRupees();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const queryClient = useQueryClient();
   const avatar = useProfileAvatar();
   const [refreshing, setRefreshing] = useState(false);
@@ -45,7 +44,7 @@ export function KhataScreen() {
       <>
         <SectionHeader
           title={title}
-          right={<Text style={{ fontSize: 13, color: COLORS.muted }}>{formatRupees(Math.abs(total))} total</Text>}
+          right={<Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>{formatRupees(Math.abs(total))} total</Text>}
         />
         {khata.isLoading ? (
           <Card>

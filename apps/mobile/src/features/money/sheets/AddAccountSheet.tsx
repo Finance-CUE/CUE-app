@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 import { newClientKey } from '@/features/money/accounts';
 import { type Bank, suggestNickname } from '@/features/money/banks';
 import { BankPicker } from './BankPicker';
@@ -104,7 +104,7 @@ export function AddAccountSheet({ visible, onClose }: { visible: boolean; onClos
         prefix="₹"
         keyboardType="decimal-pad"
       />
-      <Text style={{ fontSize: 13, color: COLORS.muted }}>Balance on</Text>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>Balance on</Text>
       <ChipRow options={DATE_OPTIONS} value={dateChoice} onChange={setDateChoice} />
       {dateChoice === 'other' ? (
         <TextField
@@ -117,7 +117,7 @@ export function AddAccountSheet({ visible, onClose }: { visible: boolean; onClos
         />
       ) : null}
       {dateChoice === 'other' && otherDate.length >= 10 ? <FormError message={dateProblem} /> : null}
-      <Text style={{ fontSize: 12, color: COLORS.muted }}>
+      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>
         Spends you add from before this date won't be taken off again.
       </Text>
       <FormError message={error} />

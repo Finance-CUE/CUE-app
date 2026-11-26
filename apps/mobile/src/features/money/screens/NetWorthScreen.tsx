@@ -1,28 +1,20 @@
-import { Redirect, useRouter } from 'expo-router';
-import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { useAuthStore } from '@/features/auth/store';
 import { EyeIcon, EyeOffIcon } from '../components/icons';
-import { Card, ScreenScroll } from '../components/ui';
-import { Sparkline } from '../components/Sparkline';
+import { ScreenScroll } from '../components/ui';
+import { NetWorthChart } from '../charts/NetWorthChart';
+import { historyNote, RANGES, tooltipDay } from '../charts/model';
 import { toISODate } from '../dates';
-import { countPoints } from '../chart';
 import { usePrivacyStore, useRupees } from '../privacy';
-import { useNetWorth, useToday, useTrend } from '../hooks';
+import { useNetWorth, useNetWorthHistory, usePosition, useToday } from '../hooks';
+import { Sheet } from '../sheets/Sheet';
 import { breakdown, changeLine, netWorthSentence } from '../today/model';
 import { CardError, Eyebrow, Skeleton, TodayCard } from '../today/parts';
 import type { Account } from '../types';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
-
-function Dot({ color, label }: { color: string; label: string }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
-      <Text style={{ fontSize: 13, color: COLORS.muted }}>{label}</Text>
-    </View>
-  );
-}
 
 export function NetWorthScreen() {
   const status = useAuthStore((s) => s.status);
@@ -35,17 +27,22 @@ export function NetWorthScreen() {
 function NetWorthBody() {
   // Masked while the eye toggle hides amounts.
   const formatRupees = useRupees();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const router = useRouter();
   const hidden = usePrivacyStore((st) => st.hidden);
   const toggle = usePrivacyStore((st) => st.toggle);
   const todayISO = toISODate(useToday());
+  const { width } = useWindowDimensions();
+  // ?days=30 from the card's sparkline; 30D is the default anyway.
+  const params = useLocalSearchParams<{ days?: string }>();
+  const [days, setDays] = useState(() => RANGES.find((r) => String(r.days) === params.days)?.days ?? 30);
+  const [positionOn, setPositionOn] = useState<string | null>(null);
   const netWorth = useNetWorth(todayISO);
-  const trend = useTrend(todayISO);
+  const history = useNetWorthHistory(todayISO, days);
+  const position = usePosition(positionOn);
 
   const nw = netWorth.data;
-  const points = trend.data ?? [];
-  const known = countPoints(points.map((p) => p.balance_paise));
+  const note = history.data ? historyNote(history.data, days, todayISO) : null;
   const change = nw ? changeLine(nw.change_this_month_paise, formatRupees) : null;
   const table = nw ? breakdown(nw, nw.accounts) : null;
   // "Tap opens" (spec 4.3): Khata for money lent or borrowed; the account
@@ -72,7 +69,7 @@ function NetWorthBody() {
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/today'))}
               hitSlop={8}
               style={{ minHeight: 44, justifyContent: 'center' }}>
-              <Text style={{ fontSize: 16, color: theme.accentText, fontWeight: '600' }}>‹ Back</Text>
+              <Text style={{ fontFamily: FONT.semibold, fontSize: 16, color: theme.accentText }}>‹ Back</Text>
             </TouchableOpacity>
             <TouchableOpacity
               accessibilityRole="button"
@@ -84,12 +81,53 @@ function NetWorthBody() {
             </TouchableOpacity>
           </View>
           <View accessible accessibilityLabel={nw ? netWorthSentence(nw, formatRupees) : 'Net worth'}>
-            <Text style={{ fontSize: 14, color: COLORS.muted }}>Net worth</Text>
-            <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 40, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.muted }}>Net worth</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 40, color: COLORS.text, fontFamily: HEADING_FONT }}>
               {nw ? formatRupees(nw.net_worth_paise) : '—'}
             </Text>
-            {change ? <Text style={{ fontSize: 12.5, color: COLORS.muted }}>{change.text}</Text> : null}
+            {change ? <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.muted }}>{change.text}</Text> : null}
           </View>
+
+          <TodayCard>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              {RANGES.map((r) => {
+                const on = r.days === days;
+                return (
+                  <TouchableOpacity
+                    key={r.label}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: on }}
+                    onPress={() => setDays(r.days)}
+                    style={{
+                      minWidth: 48,
+                      minHeight: 36,
+                      borderRadius: 18,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: on ? theme.tint : 'transparent',
+                    }}>
+                    <Text style={{ fontFamily: on ? FONT.semibold : FONT.medium, fontSize: 13, color: on ? theme.accentText : COLORS.muted }}>
+                      {r.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {history.data ? (
+              history.data.points.length === 0 ? (
+                <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>
+                  Add an account to see how your net worth moves over time.
+                </Text>
+              ) : (
+                <NetWorthChart history={history.data} width={width - 26 * 2 - 20 * 2 - 2} onPick={setPositionOn} />
+              )
+            ) : history.isError ? (
+              <CardError message="Couldn't load the chart." onRetry={() => void history.refetch()} />
+            ) : (
+              <Skeleton lines={[{ width: '100%', height: 160 }]} />
+            )}
+            {note ? <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>{note}</Text> : null}
+          </TodayCard>
 
           {!table ? (
             <TodayCard title="Breakdown">
@@ -114,44 +152,40 @@ function NetWorthBody() {
                 <Line label="Total liabilities" amount={formatRupees(table.totalLiabilities)} strong />
               </TodayCard>
               <View style={{ gap: 4 }}>
-                <Text style={{ fontSize: 13, color: COLORS.text, fontWeight: '600' }}>
+                <Text style={{ fontFamily: FONT.semibold, fontSize: 13, color: COLORS.text }}>
                   Net worth = Total assets − Total liabilities
                 </Text>
-                <Text style={{ fontSize: 12, color: COLORS.muted }}>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>
                   Moving money between your own accounts doesn't change net worth. Investments will be added later.
                 </Text>
               </View>
             </>
           )}
 
-          <Card>
-            <Text style={{ fontSize: 16, color: COLORS.text, fontFamily: HEADING_FONT, marginBottom: 12 }}>
-              Last 30 days
-            </Text>
-            {trend.isError ? (
-              <Text style={{ color: COLORS.muted, fontSize: 14 }}>Could not load the trend.</Text>
-            ) : trend.isLoading ? (
-              <ActivityIndicator color={theme.accent} />
-            ) : known === 0 ? (
-              <Text style={{ color: COLORS.muted, fontSize: 14 }}>
-                Add an account to see how your balance moves over time.
-              </Text>
-            ) : (
-              <>
-                <Sparkline points={points} width={280} height={120} />
-                {known === 1 ? (
-                  <Text style={{ color: COLORS.muted, fontSize: 13, marginTop: 8 }}>
-                    Your line starts today. It moves as you log spends and update your balance.
-                  </Text>
-                ) : null}
-                <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
-                  <Dot color={theme.accent} label="Balance" />
-                  <Dot color={COLORS.peach} label="Spending" />
-                </View>
-              </>
-            )}
-          </Card>
       </ScreenScroll>
+      <Sheet
+        visible={positionOn !== null}
+        onClose={() => setPositionOn(null)}
+        title={positionOn ? `Your position on ${tooltipDay(positionOn).slice(4)}` : ''}
+        subtitle="The ledger as it stood at the end of that day.">
+        {position.data && positionOn === position.data.on ? (
+          <View style={{ gap: 4 }}>
+            <Line label="Available balance" amount={formatRupees(position.data.available_paise)} />
+            {position.data.receivables_paise ? <Line label="Money lent" amount={formatRupees(position.data.receivables_paise)} /> : null}
+            {position.data.other_assets_paise ? <Line label="Other assets" amount={formatRupees(position.data.other_assets_paise)} /> : null}
+            <Line label="Total assets" amount={formatRupees(position.data.total_assets_paise)} strong />
+            {position.data.card_dues_paise ? <Line label="Credit card outstanding" amount={formatRupees(position.data.card_dues_paise)} /> : null}
+            {position.data.borrowings_paise ? <Line label="Money borrowed" amount={formatRupees(position.data.borrowings_paise)} /> : null}
+            {position.data.other_liabilities_paise ? <Line label="Other liabilities" amount={formatRupees(position.data.other_liabilities_paise)} /> : null}
+            <Line label="Total liabilities" amount={formatRupees(position.data.total_liabilities_paise)} strong />
+            <Line label="Net worth" amount={formatRupees(position.data.net_worth_paise)} strong />
+          </View>
+        ) : position.isError ? (
+          <CardError message="Couldn't load that day." onRetry={() => void position.refetch()} />
+        ) : (
+          <Skeleton lines={[{ width: '100%', height: 20 }, { width: '100%', height: 20 }, { width: '100%', height: 20 }]} />
+        )}
+      </Sheet>
     </View>
   );
 }
@@ -171,13 +205,12 @@ function Line({ label, amount, strong, onPress }: { label: string; amount: strin
         alignItems: 'center',
         borderTopWidth: strong ? 1 : 0,
         borderTopColor: COLORS.cardBorder,
-        paddingTop: strong ? 8 : 0,
-      }}>
-      <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: strong ? '700' : '500' }}>
+        paddingTop: strong ? 8 : 0 }}>
+      <Text style={{ fontFamily: strong ? FONT.semibold : FONT.medium, fontSize: 14, color: COLORS.text }}>
         {label}
         {onPress ? ' ›' : ''}
       </Text>
-      <Text style={{ fontSize: 14, color: COLORS.text, fontWeight: strong ? '700' : '600' }}>{amount}</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: COLORS.text, fontVariant: ['tabular-nums'] }}>{amount}</Text>
     </TouchableOpacity>
   );
 }

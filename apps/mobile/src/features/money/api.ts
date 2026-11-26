@@ -10,18 +10,24 @@ import type {
   EntryUpdate,
   LedgerTxn,
   NetWorth,
-  CycleAnswer,
   PaymentMethod,
-  DueCycle,
   KhataEntry,
   KhataInput,
   MoneySummary,
   Nudges,
   PlannedNudge,
   Spend,
-  Subscription,
-  SubscriptionInput,
   TrendPoint,
+  CashFlow,
+  CashFlowPeriod,
+  MonthPoint,
+  MonthSummary,
+  NetWorthHistory,
+  Occurrence,
+  PayInput,
+  Position,
+  Schedule,
+  ScheduleInput,
 } from '@/features/money/types';
 
 export async function fetchSpends(start: string, end: string): Promise<Spend[]> {
@@ -116,9 +122,12 @@ export async function deleteTransaction(id: string): Promise<LedgerTxn> {
   return result.data;
 }
 
-/** Ledger entries dated start..end (inclusive, at most a year). */
-export async function fetchTransactions(start: string, end: string): Promise<LedgerTxn[]> {
-  const result = await api.get<LedgerTxn[]>('/money/transactions', { params: { start, end } });
+/** Ledger entries dated start..end (inclusive, at most a year). `recurring` keeps
+ * only entries that belong to a scheduled item. */
+export async function fetchTransactions(start: string, end: string, recurring = false): Promise<LedgerTxn[]> {
+  const result = await api.get<LedgerTxn[]>('/money/transactions', {
+    params: recurring ? { start, end, recurring: true } : { start, end },
+  });
   return result.data;
 }
 
@@ -126,28 +135,6 @@ export async function deleteKhata(id: string): Promise<void> {
   await api.delete(`/money/khata/${id}`);
 }
 
-export async function fetchSubscriptions(today: string): Promise<Subscription[]> {
-  const result = await api.get<Subscription[]>('/money/subscriptions', { params: { today } });
-  return result.data;
-}
-
-export async function addSubscription(input: SubscriptionInput): Promise<Subscription> {
-  const result = await api.post<Subscription>('/money/subscriptions', input);
-  return result.data;
-}
-
-export async function deleteSubscription(id: string): Promise<void> {
-  await api.delete(`/money/subscriptions/${id}`);
-}
-
-export async function fetchDueSubscriptions(today: string): Promise<DueCycle[]> {
-  const result = await api.get<DueCycle[]>('/money/subscriptions/due', { params: { today } });
-  return result.data;
-}
-
-export async function answerCycle(id: string, answer: CycleAnswer): Promise<void> {
-  await api.post(`/money/subscriptions/${id}/cycles`, answer);
-}
 
 /** Retry once without `tz` when the server rejects the device zone (422). */
 async function getWithTz<T>(url: string, params: Record<string, string>): Promise<T> {
@@ -173,4 +160,73 @@ export const fetchNudgePlan = (): Promise<PlannedNudge[]> =>
 export async function putNudges(nudges: Nudges): Promise<Nudges> {
   const result = await api.put<Nudges>('/profile/nudges', nudges);
   return result.data;
+}
+
+// P1: scheduled payments and recurring income (spec 4.8) --------------------------
+
+/** Active items, soonest next due first. */
+export async function fetchScheduled(today: string): Promise<Schedule[]> {
+  return (await api.get<Schedule[]>('/money/scheduled', { params: { today } })).data;
+}
+
+/** A retry with the same client key returns the item already made. */
+export async function addScheduled({
+  today,
+  ...input
+}: ScheduleInput & { client_key: string; today: string }): Promise<Schedule> {
+  return (await api.post<Schedule>('/money/scheduled', input, { params: { today } })).data;
+}
+
+export async function updateScheduled({ id, today, ...input }: ScheduleInput & { id: string; today: string }): Promise<Schedule> {
+  return (await api.patch<Schedule>(`/money/scheduled/${id}`, input, { params: { today } })).data;
+}
+
+/** Stops future dues; payments already recorded stay. */
+export async function cancelScheduled(id: string): Promise<void> {
+  await api.post(`/money/scheduled/${id}/cancel`);
+}
+
+/** Due dates start..end with their status; openBefore adds unanswered earlier ones. */
+export async function fetchDues(start: string, end: string, openBefore = false): Promise<Occurrence[]> {
+  const params = openBefore ? { start, end, open_before: true } : { start, end };
+  return (await api.get<Occurrence[]>('/money/dues', { params })).data;
+}
+
+/** Mark paid (or received): records the expense or income. */
+export async function payScheduled({ id, today, ...input }: PayInput & { id: string; today: string }): Promise<LedgerTxn> {
+  return (await api.post<LedgerTxn>(`/money/scheduled/${id}/pay`, input, { params: { today } })).data;
+}
+
+/** Skip this due date only. */
+export async function skipScheduled({ id, due_on }: { id: string; due_on: string }): Promise<void> {
+  await api.post(`/money/scheduled/${id}/skip`, { due_on });
+}
+
+/** Undo a Skip. */
+export async function unskipScheduled({ id, due_on }: { id: string; due_on: string }): Promise<void> {
+  await api.post(`/money/scheduled/${id}/unskip`, { due_on });
+}
+
+// P1: money in and out --------------------------------------------------------------
+
+export async function fetchMonth(today: string): Promise<MonthSummary> {
+  return (await api.get<MonthSummary>('/money/month', { params: { today } })).data;
+}
+
+/** The last `count` months, oldest first. */
+export async function fetchMonths(today: string, count = 6): Promise<MonthPoint[]> {
+  return (await api.get<MonthPoint[]>('/money/months', { params: { today, count } })).data;
+}
+
+export async function fetchCashFlow(period: CashFlowPeriod, on: string, today: string): Promise<CashFlow> {
+  return (await api.get<CashFlow>('/money/cash-flow', { params: { period, on, today } })).data;
+}
+
+export async function fetchNetWorthHistory(today: string, days: number): Promise<NetWorthHistory> {
+  return (await api.get<NetWorthHistory>('/money/net-worth/history', { params: { today, days } })).data;
+}
+
+/** "Your position on <date>". */
+export async function fetchPosition(on: string): Promise<Position> {
+  return (await api.get<Position>('/money/position', { params: { on } })).data;
 }

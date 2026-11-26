@@ -1,18 +1,18 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
+import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { newClientKey } from '../accounts';
 import { ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { ChipRow, PrimaryButton, TextField } from '../components/ui';
 import { daysBefore, parseDisplayDate, toDisplayDate, toISODate } from '../dates';
 import { formatRupees as plainRupees, paiseToInput, parseRupeesToPaise } from '../format';
-import { useAddTransaction, useTransactions, useUpdateTransaction } from '../hooks';
+import { useAddScheduled, useAddTransaction, useTransactions, useUpdateTransaction } from '../hooks';
 import { useRupees } from '../privacy';
 import type { Account, LedgerTxn } from '../types';
 import { FieldError, FormError, Sheet, useGuardedSubmit } from '../sheets/Sheet';
 import {
+  categoryName,
   defaultAccountId,
   defaultToAccountId,
   EXPENSE_CATEGORIES,
@@ -20,7 +20,11 @@ import {
   hasInput,
   INCOME_CATEGORIES,
   lowBalanceNote,
+  nextRepeatDate,
   QUICK_AMOUNTS,
+  REPEAT_OPTIONS,
+  type RepeatChoice,
+  scheduleKindFor,
   smartDefaults,
   suggestExpenseCategory,
   suggestIncomeCategory,
@@ -29,7 +33,15 @@ import {
 
 export type QuickAddChoice = EntryKind | null;
 /** What the caller needs after a save: the entry (for Undo) and any low-balance note. */
-export type Saved = { txn: LedgerTxn; kind: EntryKind; lowNote: string | null; accountId: string; edited: boolean };
+export type Saved = {
+  txn: LedgerTxn | null;
+  kind: EntryKind;
+  lowNote: string | null;
+  accountId: string;
+  edited: boolean;
+  /** A future date: saved as a scheduled payment due then, not as an entry. */
+  scheduledFor?: string;
+};
 export type Seed = { mode: 'edit' | 'duplicate'; txn: LedgerTxn };
 
 const TITLES: Record<EntryKind, string> = { expense: 'Expense', income: 'Income', transfer: 'Transfer' };
@@ -43,9 +55,10 @@ const DATE_OPTIONS: { value: DateChoice; label: string }[] = [
 ];
 
 /**
- * The floating + opens this one sheet (spec Quick Add). P0 has Expense, Income
- * and Transfer on the ledger; Lend / Borrow and Subscription open their
- * current forms until P3 and P1 bring them into this sheet.
+ * The floating + opens this one sheet (spec Quick Add): Expense, Income and
+ * Transfer on the ledger; Subscription opens the scheduled payment form; Lend /
+ * Borrow opens Khata until P3. More options holds notes and Recurring. A new
+ * expense or income dated after today becomes a scheduled payment (suggestion 6).
  */
 export function QuickAddSheet({
   visible,
@@ -74,7 +87,7 @@ export function QuickAddSheet({
   onSubscription: () => void;
 }) {
   const formatRupees = useRupees();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const [kind, setKind] = useState<QuickAddChoice>(null);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -85,13 +98,18 @@ export function QuickAddSheet({
   const [otherDate, setOtherDate] = useState('');
   const [note, setNote] = useState('');
   const [more, setMore] = useState(false);
+  const [repeat, setRepeat] = useState<RepeatChoice | null>(null);
+  const [nextText, setNextText] = useState('');
+  const [variable, setVariable] = useState(false);
   const [tried, setTried] = useState(false);
   const [clientKey, setClientKey] = useState(newClientKey);
   const saved = useRef<LedgerTxn | null>(null);
   const create = useAddTransaction();
   const update = useUpdateTransaction();
+  const schedule = useAddScheduled();
   const editing = seed?.mode === 'edit' ? seed.txn : null;
   const mutation = editing ? update : create;
+  const pending = mutation.isPending || schedule.isPending;
   const { run, error } = useGuardedSubmit(visible, SAVE_ERROR);
 
   // A year of entries, for smart defaults and the last account used per type.
@@ -112,11 +130,15 @@ export function QuickAddSheet({
     setPickedTo(from?.to_account_id ?? null);
     // Editing keeps the entry's date; a duplicate is new, so it takes Today's selected date.
     const wanted = seed?.mode === 'edit' && from ? from.occurred_on : defaultDate;
-    const start = wanted > todayISO ? todayISO : wanted;
+    // A future date selected on Today stays: the entry becomes a scheduled payment.
+    const start = wanted > todayISO && (seed?.mode === 'edit' || initial === 'transfer') ? todayISO : wanted;
     setDateChoice(start === todayISO ? 'today' : start === daysBefore(new Date(), 1) ? 'yesterday' : 'other');
     setOtherDate(toDisplayDate(start));
     setNote(from?.note ?? '');
     setMore(Boolean(from?.note));
+    setRepeat(null);
+    setNextText('');
+    setVariable(false);
     setTried(false);
     setClientKey(newClientKey());
     // defaultDate and todayISO are read only when the sheet opens.
@@ -136,13 +158,20 @@ export function QuickAddSheet({
   const toAccountId = pickedTo && openIds.has(pickedTo) ? pickedTo : defaultToAccountId(open, accountId);
   const date =
     dateChoice === 'today' ? todayISO : dateChoice === 'yesterday' ? daysBefore(today, 1) : parseDisplayDate(otherDate);
-  const errors = kind
-    ? validate({ kind, amountPaise: paise, description, category, accountId, toAccountId, date }, todayISO)
+  const future = !editing && kind !== 'transfer' && date !== null && date > todayISO;
+  const nextOn = repeat ? (nextText ? parseDisplayDate(nextText) : date ? nextRepeatDate(date, repeat) : null) : null;
+  const baseErrors = kind
+    ? validate({ kind, amountPaise: paise, description, category, accountId, toAccountId, date }, todayISO, !editing)
     : {};
+  const errors: typeof baseErrors & { next?: string } = { ...baseErrors };
+  if (repeat && !future) {
+    if (!nextOn) errors.next = 'Enter the next date as DD/MM/YYYY.';
+    else if (date && nextOn <= date) errors.next = 'The next date must be after this one.';
+  }
   const show = (field: keyof typeof errors) => (tried ? errors[field] : undefined);
 
   const close = () => {
-    if (kind && hasInput(amount, description, note) && !mutation.isPending) {
+    if (kind && hasInput(amount, description, note) && !pending) {
       Alert.alert('Discard this entry?', undefined, [
         { text: 'Keep editing', style: 'cancel' },
         { text: 'Discard', style: 'destructive', onPress: onClose },
@@ -160,6 +189,31 @@ export function QuickAddSheet({
     const lowNote = kind === 'income' || editing ? null : lowBalanceNote(account, paise, formatRupees);
     const text = description.trim();
     const transfer = kind === 'transfer';
+    if (future) {
+      // Suggestion 6: it can't touch balances before it happens, so it waits in Coming up.
+      void run(
+        async () => {
+          await schedule.mutateAsync({
+            client_key: clientKey,
+            today: todayISO,
+            kind: scheduleKindFor(kind, category),
+            name: text || categoryName(category),
+            amount_paise: paise,
+            frequency: repeat ?? 'once',
+            next_on: date,
+            account_id: accountId,
+            category,
+            variable,
+            reminder: true,
+          });
+        },
+        () => {
+          onSaved({ txn: null, kind, lowNote: null, accountId, edited: false, scheduledFor: date });
+          onClose();
+        },
+      );
+      return;
+    }
     void run(
       async () => {
         saved.current = editing
@@ -183,6 +237,7 @@ export function QuickAddSheet({
               ...(text ? { description: text } : {}),
               ...(note.trim() ? { note: note.trim() } : {}),
               occurred_on: date,
+              ...(repeat && nextOn && !transfer ? { repeat: { frequency: repeat, next_on: nextOn, variable } } : {}),
             });
       },
       () => {
@@ -200,10 +255,10 @@ export function QuickAddSheet({
           <Tile label="Income" icon={<RupeeIcon color={theme.accentText} />} onPress={() => setKind('income')} />
           <Tile label="Transfer" icon={<SwapIcon color={theme.accentText} />} onPress={() => setKind('transfer')} />
           <Tile label="Lend / Borrow" icon={<SwapIcon color={theme.accentText} />} onPress={onLendBorrow} />
-          <Tile label="Subscription" icon={<ClockIcon color={theme.accentText} />} onPress={onSubscription} />
+          <Tile label="Subscription or bill" icon={<ClockIcon color={theme.accentText} />} onPress={onSubscription} />
         </View>
         {open.length === 0 ? (
-          <Text style={{ fontSize: 13, color: COLORS.muted }}>Add an account on Today first, so CUE knows where the money is.</Text>
+          <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>Add an account on Today first, so CUE knows where the money is.</Text>
         ) : null}
       </Sheet>
     );
@@ -220,9 +275,9 @@ export function QuickAddSheet({
       footer={
         <>
           <FormError message={error} />
-          <PrimaryButton label="Save" onPress={save} disabled={mutation.isPending} loading={mutation.isPending} />
+          <PrimaryButton label={future ? 'Schedule' : 'Save'} onPress={save} disabled={pending} loading={pending} />
           <TouchableOpacity accessibilityRole="button" onPress={close} style={{ alignSelf: 'center', minHeight: 44, justifyContent: 'center' }}>
-            <Text style={{ fontSize: 15, color: COLORS.muted }}>Cancel</Text>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.muted }}>Cancel</Text>
           </TouchableOpacity>
         </>
       }>
@@ -275,12 +330,53 @@ export function QuickAddSheet({
         />
       ) : null}
       <FieldError message={show('date')} />
+      {future ? (
+        <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.muted, marginTop: -6 }}>
+          A future date is saved as a scheduled payment. It shows in Coming up and is spent only when you mark it paid.
+        </Text>
+      ) : null}
 
       {more ? (
-        <TextField label="Notes" value={note} onChangeText={setNote} maxLength={120} />
+        <>
+          <TextField label="Notes" value={note} onChangeText={setNote} maxLength={120} />
+          {kind !== 'transfer' && !editing ? (
+            <>
+              <Label>Recurring</Label>
+              <ChipRow
+                options={[{ value: 'none', label: 'One time' }, ...REPEAT_OPTIONS]}
+                value={repeat ?? 'none'}
+                onChange={(v) => setRepeat(v === 'none' ? null : (v as RepeatChoice))}
+              />
+              {repeat && !future ? (
+                <TextField
+                  label={kind === 'income' ? 'Next expected (DD/MM/YYYY)' : 'Next due (DD/MM/YYYY)'}
+                  value={nextText || (date ? toDisplayDate(nextRepeatDate(date, repeat)) : '')}
+                  onChangeText={setNextText}
+                  placeholder="DD/MM/YYYY"
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={10}
+                />
+              ) : null}
+              <FieldError message={tried ? errors.next : undefined} />
+              {repeat ? (
+                <>
+                  <Label>{kind === 'income' ? 'Fixed or variable' : 'Amount each time'}</Label>
+                  <ChipRow
+                    options={[
+                      { value: 'fixed', label: 'Fixed' },
+                      { value: 'variable', label: 'Variable' },
+                    ]}
+                    value={variable ? 'variable' : 'fixed'}
+                    onChange={(v) => setVariable(v === 'variable')}
+                  />
+                </>
+              ) : null}
+            </>
+          ) : null}
+        </>
       ) : (
         <TouchableOpacity accessibilityRole="button" onPress={() => setMore(true)} style={{ minHeight: 44, justifyContent: 'center' }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>More options</Text>
+          <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>More options</Text>
         </TouchableOpacity>
       )}
     </Sheet>
@@ -322,26 +418,25 @@ function Tile({ label, icon, onPress }: { label: string; icon: ReactNode; onPres
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
         backgroundColor: COLORS.white,
-        padding: 8,
-      }}>
+        padding: 8 }}>
       {icon}
-      <Text style={{ fontSize: 12.5, color: COLORS.text, textAlign: 'center' }}>{label}</Text>
+      <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.text, textAlign: 'center' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 function Chip({ label, onPress }: { label: string; onPress: () => void }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   return (
     <TouchableOpacity
       accessibilityRole="button"
       onPress={onPress}
       style={{ minHeight: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: theme.tint, justifyContent: 'center' }}>
-      <Text style={{ fontSize: 13, fontWeight: '600', color: theme.accentText }}>{label}</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 13, color: theme.accentText }}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 function Label({ children }: { children: string }) {
-  return <Text style={{ fontSize: 13, color: COLORS.muted, marginBottom: -8 }}>{children}</Text>;
+  return <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted, marginBottom: -8 }}>{children}</Text>;
 }

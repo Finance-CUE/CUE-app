@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { AppState } from 'react-native';
 
 import { useAssessmentGate } from '@/features/assessment/hooks';
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS } from '@/features/money/palette';
 import { useAuthStore } from '@/features/auth/store';
 import { TabBar } from '@/features/money/components/TabBar';
 import { useNudgePlan, useSummary } from '@/features/money/hooks';
@@ -18,14 +18,14 @@ export default function TabsLayout() {
 
   const queryClient = useQueryClient();
 
-  // Refetch on resume so the 7-day schedule keeps rolling forward and cycles that
-  // came due surface without a cold start. The subscriptions prefix covers the due
-  // query. Scoped to these; other queries keep refetchOnWindowFocus off.
+  // Refetch on resume so the 7-day schedule keeps rolling forward and dues that
+  // came due surface without a cold start (Coming up's "Check"). Scoped to these;
+  // other queries keep refetchOnWindowFocus off.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next !== 'active') return;
       queryClient.invalidateQueries({ queryKey: ['money', 'nudge-plan'] });
-      queryClient.invalidateQueries({ queryKey: ['money', 'subscriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['money', 'dues'] });
     });
     return () => sub.remove();
   }, [queryClient]);
@@ -33,7 +33,7 @@ export default function TabsLayout() {
   useEffect(() => {
     if (status !== 'authenticated') return;
     return watchSubscriptionTaps(() => {
-      queryClient.invalidateQueries({ queryKey: ['money', 'subscriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['money', 'dues'] });
       // navigate alone would push a second (tabs) over a stacked screen like /net-worth.
       if (router.canDismiss()) router.dismissAll();
       router.navigate('/today');

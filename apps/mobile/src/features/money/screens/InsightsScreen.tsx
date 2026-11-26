@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { CategoryIcon } from '../components/icons';
 import { Card, EmptyCard, Row, ScreenHeader, ScreenScroll, SectionHeader, useProfileAvatar } from '../components/ui';
 import { categoryLabel } from '../categories';
@@ -10,20 +10,19 @@ import { monthRange, toISODate, weekDays } from '../dates';
 import { useRupees } from '../privacy';
 import { useSpends } from '../hooks';
 import type { Category } from '../types';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const BAR_AREA = 96;
 
 function Total({ paise }: { paise: number }) {
   const formatRupees = useRupees();
-  return <Text style={{ fontSize: 13, color: COLORS.muted }}>{formatRupees(paise)} total</Text>;
+  return <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>{formatRupees(paise)} total</Text>;
 }
 
 export function InsightsScreen() {
   // Masked while the eye toggle hides amounts.
   const formatRupees = useRupees();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const queryClient = useQueryClient();
   const avatar = useProfileAvatar();
   const [refreshing, setRefreshing] = useState(false);
@@ -71,7 +70,7 @@ export function InsightsScreen() {
         <Text style={{ fontSize: 16, lineHeight: 23, color: COLORS.text, fontFamily: HEADING_FONT, fontStyle: 'italic' }}>
           {theme.belief}
         </Text>
-        <Text style={{ fontSize: 13, color: COLORS.muted }}>CUE will start noticing patterns as you use it.</Text>
+        <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>CUE will start noticing patterns as you use it.</Text>
       </Card>
 
       <SectionHeader title="Spend by day" right={ready ? <Total paise={weekTotal} /> : undefined} />
@@ -79,7 +78,7 @@ export function InsightsScreen() {
         {spends.isLoading ? (
           <ActivityIndicator color={theme.accent} />
         ) : spends.isError ? (
-          <Text style={{ color: COLORS.muted, fontSize: 14 }}>Could not load. Pull to refresh.</Text>
+          <Text style={{ fontFamily: FONT.medium, color: COLORS.muted, fontSize: 14 }}>Could not load. Pull to refresh.</Text>
         ) : (
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             {dayTotals.map((t, i) => (
@@ -90,11 +89,10 @@ export function InsightsScreen() {
                       width: 18,
                       borderRadius: 9,
                       height: t > 0 && maxDay > 0 ? Math.max(4, (t / maxDay) * BAR_AREA) : 4,
-                      backgroundColor: t > 0 ? theme.accent : COLORS.track,
-                    }}
+                      backgroundColor: t > 0 ? theme.accent : COLORS.track }}
                   />
                 </View>
-                <Text style={{ fontSize: 12, color: COLORS.muted }}>{DAY_LETTERS[i]}</Text>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>{DAY_LETTERS[i]}</Text>
               </View>
             ))}
           </View>
@@ -103,7 +101,7 @@ export function InsightsScreen() {
 
       <SectionHeader
         title="Where it went"
-        right={ready && top.length ? <Text style={{ fontSize: 13, color: COLORS.muted }}>Top {top.length}</Text> : undefined}
+        right={ready && top.length ? <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>Top {top.length}</Text> : undefined}
       />
       {!ready ? null : top.length ? (
         <Card>
@@ -118,8 +116,7 @@ export function InsightsScreen() {
                     borderRadius: 20,
                     backgroundColor: theme.tint,
                     alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
+                    justifyContent: 'center' }}>
                   <CategoryIcon category={slug} color={COLORS.text} size={20} />
                 </View>
               }

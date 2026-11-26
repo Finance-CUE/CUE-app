@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 
 export type ToastAction = { label: string; onPress: () => void };
 export type ToastMessage = {
@@ -46,20 +46,19 @@ export function Toast({ toast, onDone }: { toast: ToastMessage | null; onDone: (
         backgroundColor: COLORS.text,
         paddingHorizontal: 16,
         paddingVertical: 10,
-        gap: 6,
-      }}>
+        gap: 6 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 }}>
-        <Text style={{ color: COLORS.white, fontSize: 14, flex: 1 }}>{toast.text}</Text>
+        <Text style={{ fontFamily: FONT.medium, color: COLORS.white, fontSize: 14, flex: 1 }}>{toast.text}</Text>
         {toast.action ? (
           <TouchableOpacity accessibilityRole="button" onPress={tap(toast.action)} hitSlop={10} style={{ minHeight: 44, justifyContent: 'center', paddingLeft: 12 }}>
-            <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '700' }}>{toast.action.label}</Text>
+            <Text style={{ fontFamily: FONT.semibold, color: COLORS.white, fontSize: 14 }}>{toast.action.label}</Text>
           </TouchableOpacity>
         ) : null}
       </View>
       {toast.note ? (
         <TouchableOpacity accessibilityRole="button" onPress={tap(toast.note.action)} style={{ minHeight: 32, justifyContent: 'center' }}>
-          <Text style={{ color: COLORS.white, opacity: 0.85, fontSize: 13 }}>
-            {toast.note.text} <Text style={{ fontWeight: '700' }}>{toast.note.action.label}</Text>
+          <Text style={{ fontFamily: FONT.medium, color: COLORS.white, opacity: 0.85, fontSize: 13 }}>
+            {toast.note.text} <Text style={{ fontFamily: FONT.semibold }}>{toast.note.action.label}</Text>
           </Text>
         </TouchableOpacity>
       ) : null}

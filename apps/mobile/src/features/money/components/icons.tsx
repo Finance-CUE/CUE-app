@@ -119,3 +119,60 @@ export function CategoryIcon({ category, color, size }: { category: string; colo
     </Icon>
   );
 }
+
+/** Money in (Income tile). */
+export const InIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M12 4v13M6 11l6 6 6-6M5 20h14" />
+  </Icon>
+);
+
+/** Money out (Expenses tile). */
+export const OutIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M12 17V4M6 10l6-6 6 6M5 20h14" />
+  </Icon>
+);
+
+/** Savings tile. */
+export const SavingsIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M4 11a7 6 0 0 1 13-3h2v4l-2 1v3h-3v2h-3v-2H8v2H5v-3a6 6 0 0 1-1-4zM15 10h.01" />
+  </Icon>
+);
+
+/** Rent. */
+export const HomeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M4 11l8-7 8 7v9H4v-9zM10 20v-5h4v5" />
+  </Icon>
+);
+
+/** EMI or loan. */
+export const LoanIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Rect x="3" y="6" width="18" height="13" rx="2" />
+    <Path d="M3 10h18M7 15h4" />
+  </Icon>
+);
+
+/** Reminder on. */
+export const BellIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4l2-2zM10 21h4" />
+  </Icon>
+);
+
+export const ChevronIcon = (p: IconProps & { left?: boolean }) => (
+  <Icon {...p}>
+    <Path d={p.left ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'} />
+  </Icon>
+);
+
+/** The icon for a scheduled item's type (spec 4.8). */
+export function ScheduleIcon({ kind, color, size }: { kind: string; color: string; size?: number }) {
+  if (kind === 'rent') return <HomeIcon color={color} size={size} />;
+  if (kind === 'emi') return <LoanIcon color={color} size={size} />;
+  if (kind === 'income') return <InIcon color={color} size={size} />;
+  return <CategoryIcon category={kind === 'subscription' ? 'subscription' : kind === 'bill' ? 'bills' : 'other'} color={color} size={size} />;
+}

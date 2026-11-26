@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
+import { COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
 import { RupeeIcon } from '../components/icons';
 import { useTransactions } from '../hooks';
 import { shortDay } from '../today/model';
@@ -31,7 +30,7 @@ export function TodayTransactions({
   onAdd: () => void;
   onViewAll: () => void;
 }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const query = useTransactions(day, day);
   const byId = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
   const rows = query.data ? latestForDay(query.data, day) : null;
@@ -39,7 +38,7 @@ export function TodayTransactions({
   const title = <Eyebrow>{isToday ? 'TODAY' : shortDay(day).toUpperCase()}</Eyebrow>;
   const viewAll = (
     <TouchableOpacity accessibilityRole="button" onPress={onViewAll} hitSlop={10}>
-      <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>View all</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>View all</Text>
     </TouchableOpacity>
   );
 

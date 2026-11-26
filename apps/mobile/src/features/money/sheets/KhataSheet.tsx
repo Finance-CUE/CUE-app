@@ -2,7 +2,7 @@ import { Contact, requestPermissionsAsync } from 'expo-contacts';
 import { useState } from 'react';
 import { Alert, Platform, Text } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 
 import { defaultKhataAccount, khataAccounts, newClientKey } from '@/features/money/accounts';
 import { ChipRow, PrimaryButton, SecondaryButton, TextField } from '@/features/money/components/ui';
@@ -106,11 +106,11 @@ export function KhataSheet({ visible, onClose }: { visible: boolean; onClose: ()
       <ChipRow options={DIRECTIONS} value={direction} onChange={setDirection} />
       <TextField label="Person" value={person} onChangeText={setPerson} maxLength={60} />
       <SecondaryButton label="Pick from contacts" onPress={() => void pickContact()} />
-      {contactsNote ? <Text style={{ fontSize: 13, color: COLORS.muted }}>{contactsNote}</Text> : null}
+      {contactsNote ? <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>{contactsNote}</Text> : null}
       <TextField label="Amount" value={amount} onChangeText={setAmount} prefix="₹" keyboardType="decimal-pad" />
       {offered.length > 0 ? (
         <>
-          <Text style={{ fontSize: 13, color: COLORS.muted }}>
+          <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>
             {direction === 'lent' ? 'Paid from' : 'Received in'}
           </Text>
           <ChipRow

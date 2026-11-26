@@ -2,8 +2,7 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
+import { COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
 import { WalletIcon } from '../components/icons';
 import { useRupees } from '../privacy';
 import type { Account, NetWorth } from '../types';
@@ -24,14 +23,14 @@ export function AccountsCard({
   onAdd: () => void;
   onOpen: (account: Account) => void;
 }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const [all, setAll] = useState(false);
   const accounts = query.data?.accounts;
 
   const viewAll =
     accounts && accounts.length > ACCOUNTS_SHOWN ? (
       <TouchableOpacity accessibilityRole="button" onPress={() => setAll(!all)} hitSlop={10}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>
+        <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>
           {all ? 'Show less' : `View all (${accounts.length})`}
         </Text>
       </TouchableOpacity>
@@ -73,21 +72,21 @@ export function AccountsCard({
       </View>
       {cardsAndLoans.length > 0 ? (
         <View>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.muted, marginBottom: 2 }}>Cards and loans</Text>
+          <Text style={{ fontFamily: FONT.semibold, fontSize: 13, color: COLORS.muted, marginBottom: 2 }}>Cards and loans</Text>
           {cardsAndLoans.map((a) => (
             <AccountRow key={a.id} account={a} onPress={() => onOpen(a)} />
           ))}
         </View>
       ) : null}
       <TouchableOpacity accessibilityRole="button" onPress={onAdd} style={{ minHeight: 44, justifyContent: 'center' }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>+ Add account</Text>
+        <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>+ Add account</Text>
       </TouchableOpacity>
     </TodayCard>
   );
 }
 
 function AccountRow({ account, onPress }: { account: Account; onPress: () => void }) {
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const formatRupees = useRupees();
   const amount = accountAmount(account, formatRupees);
   return (
@@ -99,15 +98,15 @@ function AccountRow({ account, onPress }: { account: Account; onPress: () => voi
       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52 }}>
       <View
         style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: theme.tint, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: theme.accentText }}>
+        <Text style={{ fontFamily: FONT.semibold, fontSize: 13, color: theme.accentText }}>
           {account.name.trim()[0]?.toUpperCase() ?? '₹'}
         </Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.text }}>{account.name}</Text>
-        <Text style={{ fontSize: 11, color: COLORS.muted }}>{kindLabel(account.kind)}</Text>
+        <Text style={{ fontFamily: FONT.semibold, fontSize: 13, color: COLORS.text }}>{account.name}</Text>
+        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.muted }}>{kindLabel(account.kind)}</Text>
       </View>
-      <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.text }}>{amount}</Text>
+      <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: COLORS.text }}>{amount}</Text>
     </TouchableOpacity>
   );
 }

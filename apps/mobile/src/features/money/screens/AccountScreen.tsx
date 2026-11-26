@@ -2,9 +2,8 @@ import { Redirect, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
+import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { useAuthStore } from '@/features/auth/store';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 import { toErrorMessage } from '@/lib/api';
 import { bankBySlug } from '../banks';
 import { ScreenScroll } from '../components/ui';
@@ -41,7 +40,7 @@ export function AccountScreen({ id }: { id: string }) {
  */
 function AccountBody({ id }: { id: string }) {
   const router = useRouter();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const formatRupees = useRupees();
   const today = useToday();
   const todayISO = toISODate(today);
@@ -91,7 +90,7 @@ function AccountBody({ id }: { id: string }) {
           accessibilityLabel="Back"
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/today'))}
           style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}>
-          <Text style={{ fontSize: 16, color: theme.accentText, fontWeight: '600' }}>‹ Back</Text>
+          <Text style={{ fontFamily: FONT.semibold, fontSize: 16, color: theme.accentText }}>‹ Back</Text>
         </TouchableOpacity>
 
         {!account ? (
@@ -105,12 +104,12 @@ function AccountBody({ id }: { id: string }) {
         ) : (
           <>
             <View style={{ gap: 2 }}>
-              <Text style={{ fontSize: 14, color: COLORS.muted }}>{kindLabel(account.kind)}</Text>
-              <Text style={{ fontSize: 24, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600' }}>{account.name}</Text>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.muted }}>{kindLabel(account.kind)}</Text>
+              <Text style={{ fontSize: 24, color: COLORS.text, fontFamily: HEADING_FONT }}>{account.name}</Text>
               <Text
                 numberOfLines={1}
                 adjustsFontSizeToFit
-                style={{ fontSize: 40, color: COLORS.text, fontFamily: HEADING_FONT, fontWeight: '600', marginTop: 6 }}>
+                style={{ fontSize: 40, color: COLORS.text, fontFamily: HEADING_FONT, marginTop: 6 }}>
                 {accountAmount(account, formatRupees)}
               </Text>
             </View>
@@ -133,7 +132,7 @@ function AccountBody({ id }: { id: string }) {
               title="Recent transactions"
               right={
                 <TouchableOpacity accessibilityRole="button" onPress={() => router.push(`/transactions?account=${account.id}`)} hitSlop={10}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>View all</Text>
+                  <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: theme.accentText }}>View all</Text>
                 </TouchableOpacity>
               }>
               {!recent.data ? (
@@ -156,15 +155,15 @@ function AccountBody({ id }: { id: string }) {
             <TodayCard title="Month by month">
               {d.months.map((m) => (
                 <View key={m.month} style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 8 }}>
-                  <Text style={{ flex: 1, fontSize: 14, color: COLORS.text }}>{monthName(m.month)}</Text>
+                  <Text style={{ fontFamily: FONT.medium, flex: 1, fontSize: 14, color: COLORS.text }}>{monthName(m.month)}</Text>
                   {m.closing_paise === null ? (
-                    <Text style={{ fontSize: 12.5, color: COLORS.muted }}>Before you added it</Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.muted }}>Before you added it</Text>
                   ) : (
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.text }}>
+                      <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: COLORS.text }}>
                         {accountAmount({ ...account, balance_paise: m.closing_paise }, formatRupees)}
                       </Text>
-                      <Text style={{ fontSize: 11.5, color: COLORS.muted }}>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.muted }}>
                         + {formatRupees(m.money_in_paise)} · − {formatRupees(m.money_out_paise)}
                       </Text>
                     </View>
@@ -195,7 +194,7 @@ function AccountBody({ id }: { id: string }) {
 function Figure({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flex: 1, gap: 2 }}>
-      <Text style={{ fontSize: 12, color: COLORS.muted }}>{label}</Text>
+      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>{label}</Text>
       <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 20, color: COLORS.text, fontFamily: HEADING_FONT }}>
         {value}
       </Text>
@@ -206,8 +205,8 @@ function Figure({ label, value }: { label: string; value: string }) {
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', minHeight: 32, alignItems: 'center' }}>
-      <Text style={{ fontSize: 14, color: COLORS.muted }}>{label}</Text>
-      <Text style={{ fontSize: 14, color: COLORS.text }}>{value}</Text>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.muted }}>{label}</Text>
+      <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text }}>{value}</Text>
     </View>
   );
 }
