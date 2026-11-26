@@ -18,9 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from app.features.assessment.repository import AssessmentRepository
 from app.features.assessment.router import UserId, get_assessment_repo
 from app.features.auth.router import limiter
-from app.features.money import ledger, legacy
+from app.features.money import ledger, legacy, schedule
 from app.features.money.archetype_booklet import load_archetype_context
-from app.features.money.ledger_repository import LedgerRepository, to_ledger_txn
+from app.features.money.ledger_repository import LedgerRepository, to_ledger_txn, to_schedule_item
 from app.features.money.ledger_schemas import AccountCreate
 from app.features.money.nudges import HISTORY_DAYS, build_plan
 from app.features.money.repository import MoneyConflictError, MoneyStoreError
@@ -418,11 +418,22 @@ async def nudge_plan(
         templates = await repo.list_templates([slug, "default"] if slug else ["default"])
     except MoneyStoreError:  # subscription nudges need no templates
         templates = []
-    answered = await repo.list_cycle_months(user_id)
+    # Every scheduled payment with its reminder on (sql/012): subscriptions, bills,
+    # rent, EMIs. Expected income is never a reminder.
+    answers = await repo.schedule_answers(user_id)
     subs = [
-        sub.model_copy(update={"next_billing_on": _next_billing(sub, answered, now.date())})
-        for sub in await repo.list_subscriptions(user_id)
-        if sub.active
+        Subscription(
+            id=item.id,
+            name=item.name,
+            amount_paise=item.amount_paise,
+            billing_day=item.billing_day,
+            starts_on=item.starts_on,
+            active=True,
+            created_at=row["created_at"],
+            next_billing_on=schedule.next_due(item, answers, now.date()),
+        )
+        for row in await repo.list_schedule(user_id)
+        if (item := to_schedule_item(row)).active and item.reminder and schedule.is_payment(item)
     ]
     return build_plan(
         spends, slug, prefs, now, templates, subs, load_archetype_context(slug)

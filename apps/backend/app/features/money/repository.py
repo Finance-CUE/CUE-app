@@ -144,7 +144,11 @@ class MoneyRepository:
     # Subscriptions -----------------------------------------------------------
 
     async def list_subscriptions(self, user_id: str) -> list[Subscription]:
-        rows = await self._list("subscriptions", user_id, "created_at.asc")
+        """Monthly subscriptions only: the old routes know nothing of bills,
+        income or other frequencies (sql/012)."""
+        rows = await self._list(
+            "subscriptions", user_id, "created_at.asc", kind="eq.subscription", frequency="eq.monthly"
+        )
         return [Subscription(**row) for row in rows]
 
     async def add_subscription(self, user_id: str, data: SubscriptionCreate) -> Subscription:

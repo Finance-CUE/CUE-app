@@ -365,8 +365,8 @@ def test_subscription_nudge_at_10_local_on_billing_day():
     assert len(p) == 1
     assert (p[0].id, p[0].kind) == ("subscription:s1:2026-10-30", "subscription")
     assert p[0].fire_at == datetime(2026, 10, 30, 10, 0, tzinfo=IST)
-    assert p[0].title == "Is Netflix still active?"
-    assert p[0].body == "Tap to confirm this month's payment."
+    assert p[0].title == "Netflix is due today"
+    assert p[0].body == "Open CUE to mark it paid or skip it."
 
 
 def test_subscription_nudge_is_outside_the_daily_cap_and_toggles():

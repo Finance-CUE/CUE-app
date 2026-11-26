@@ -6,7 +6,7 @@ the subscription routes. The user is always the verified token subject.
 """
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -139,6 +139,44 @@ async def _check_entry(
 
 def _entry_body(data: EntryCreate | EntryUpdate) -> dict:
     return data.model_dump(mode="json", exclude={"type"})
+
+
+# The scheduled item a repeating expense becomes, by its category.
+_REPEAT_KIND = {"subscriptions": "subscription", "bills": "bill"}
+
+
+async def _repeat_item(repo: LedgerRepository, user_id: str, payload: EntryCreate) -> str:
+    """Quick Add with "recurring" on: the scheduled item the entry belongs to, next
+    due on repeat.next_on. Shares the entry's client key, so a retry reuses it."""
+    repeat = payload.repeat
+    assert repeat is not None
+    category = payload.category or "other"
+    kind = "income" if payload.type == "income" else _REPEAT_KIND.get(category, "other")
+    try:
+        row, _ = await repo.create_schedule(
+            user_id,
+            {
+                "client_key": str(payload.client_key),
+                "kind": kind,
+                "name": payload.description or category.replace("_", " ").capitalize(),
+                "amount_paise": payload.amount_paise,
+                "frequency": repeat.frequency,
+                "first_due_on": repeat.next_on.isoformat(),
+                "billing_day": repeat.next_on.day,
+                "starts_on": (repeat.next_on - timedelta(days=1)).isoformat(),
+                "account_id": str(payload.account_id),
+                "category": category,
+                "variable": repeat.variable,
+                "reminder": True,
+            },
+        )
+    except MoneyConflictError:
+        raise _fail(
+            status.HTTP_409_CONFLICT,
+            "Something with that name already repeats. Mark it paid from Coming up, "
+            "or turn off Recurring.",
+        ) from None
+    return row["id"]
 
 
 # Accounts -------------------------------------------------------------------------
@@ -310,6 +348,7 @@ async def list_transactions(
     type: Annotated[list[TxnType] | None, Query()] = None,  # noqa: A002 - the API's word
     category: Annotated[str | None, Query(max_length=40)] = None,
     q: Annotated[str | None, Query(max_length=60)] = None,
+    recurring: bool = False,
 ) -> list[TransactionOut]:
     """Transaction history (section 4.9): newest first, filtered and searched."""
     if end < start or (end - start).days >= MAX_HISTORY_DAYS:
@@ -324,6 +363,8 @@ async def list_transactions(
         rows = [r for r in rows if r["type"] in type]
     if category:
         rows = [r for r in rows if r.get("category") == category]
+    if recurring:
+        rows = [r for r in rows if r.get("schedule_id")]
     if q and q.strip():
         # Matched here, not in the store query, so the text never reaches a filter string.
         needle = q.strip().casefold()
@@ -347,9 +388,11 @@ async def add_transaction(
         response.status_code = status.HTTP_200_OK
         return _txn_out(existing)
     await _check_entry(repo, user_id, payload.type, payload)
-    row, created = await repo.add_transaction(
-        user_id, {**_entry_body(payload), "type": payload.type}
-    )
+    body = {**_entry_body(payload), "type": payload.type}
+    body.pop("repeat", None)
+    if payload.repeat is not None:
+        body["schedule_id"] = await _repeat_item(repo, user_id, payload)
+    row, created = await repo.add_transaction(user_id, body)
     if not created:
         response.status_code = status.HTTP_200_OK
     return _txn_out(row)

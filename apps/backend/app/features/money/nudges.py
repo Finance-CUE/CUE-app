@@ -125,8 +125,8 @@ def build_plan(
             PlannedNudge(
                 id=f"subscription:{sub.id}:{due}",
                 kind="subscription",
-                title=f"Is {sub.name} still active?",
-                body="Tap to confirm this month's payment.",
+                title=f"{sub.name} is due today",
+                body="Open CUE to mark it paid or skip it.",
                 fire_at=fire,
             )
         )

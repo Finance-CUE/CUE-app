@@ -207,3 +207,82 @@ def test_rows_convert_to_ledger_transactions():
     t = to_ledger_txn(TXN)
     assert t.amount_paise == 50000 and t.occurred_on == date(2026, 11, 16)
     assert t.created_at.tzinfo is not None
+
+
+# Scheduled items (sql/012) ---------------------------------------------------------
+
+
+def test_pay_scheduled_calls_the_atomic_function_and_reads_its_empty_row():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=[TXN] if len(seen) == 1 else [{"id": None}])
+
+    args = (USER, ROW, date(2026, 11, 1), KEY, 1_310_00, ROW, date(2026, 11, 16))
+    first = _run(handler, lambda r: r.pay_scheduled(*args))
+    again = _run(handler, lambda r: r.pay_scheduled(*args))
+    assert seen[0].url.path.endswith("/rpc/pay_scheduled")
+    assert json.loads(seen[0].content) == {
+        "p_user": USER, "p_schedule": ROW, "p_month": "2026-11-01", "p_client_key": KEY,
+        "p_amount": 1_310_00, "p_account": ROW, "p_on": "2026-11-16",
+    }  # fmt: skip
+    assert first == TXN and again is None
+
+
+def test_schedule_answers_map_logged_to_paid():
+    def handler(request):
+        assert json.loads(request.content) == {"p_user": USER}
+        return httpx.Response(200, json=[
+            {"subscription_id": ROW, "month": "2026-11-01", "status": "logged", "transaction_id": KEY},
+            {"subscription_id": ROW, "month": "2026-12-01", "status": "skipped", "transaction_id": None},
+        ])  # fmt: skip
+
+    answers = _run(handler, lambda r: r.schedule_answers(USER))
+    assert answers[(ROW, date(2026, 11, 1))].status == "paid"
+    assert answers[(ROW, date(2026, 11, 1))].transaction_id == KEY
+    assert answers[(ROW, date(2026, 12, 1))].status == "skipped"
+
+
+def test_unskip_deletes_only_a_skipped_answer_of_the_user():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=[{"id": ROW}])
+
+    assert _run(handler, lambda r: r.unskip_scheduled(USER, ROW, date(2026, 12, 1))) is True
+    params = seen[0].url.params
+    assert seen[0].method == "DELETE"
+    assert (params["user_id"], params["subscription_id"], params["month"], params["status"]) == (
+        f"eq.{USER}", f"eq.{ROW}", "eq.2026-12-01", "eq.skipped",
+    )  # fmt: skip
+
+
+def test_create_schedule_retry_returns_the_item_and_a_name_clash_raises():
+    def retry(request):
+        if request.method == "POST":
+            return httpx.Response(409)
+        assert request.url.params["client_key"] == f"eq.{KEY}"
+        return httpx.Response(200, json=[{"id": ROW}])
+
+    row, created = _run(retry, lambda r: r.create_schedule(USER, {"client_key": KEY, "name": "Rent"}))
+    assert row == {"id": ROW} and created is False
+
+    def clash(request):
+        return httpx.Response(409) if request.method == "POST" else httpx.Response(200, json=[])
+
+    with pytest.raises(MoneyConflictError):
+        _run(clash, lambda r: r.create_schedule(USER, {"client_key": KEY, "name": "Rent"}))
+
+
+def test_old_subscription_routes_see_only_monthly_subscriptions():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=[])
+
+    _run(handler, lambda r: r.list_subscriptions(USER))
+    assert seen[0].url.params["kind"] == "eq.subscription"
+    assert seen[0].url.params["frequency"] == "eq.monthly"

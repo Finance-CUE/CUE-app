@@ -30,6 +30,9 @@ class FakeLedger:
         self.accounts: list[dict] = []
         self.txns: list[dict] = []
         self.list_calls: list[tuple] = []
+        self.items: list[dict] = []
+        # (user, item, month) -> (status, transaction id)
+        self.cycle_rows: dict[tuple[str, str, date], tuple[str, str | None]] = {}
 
     # Accounts ----------------------------------------------------------------
 
@@ -104,6 +107,7 @@ class FakeLedger:
             "id": key(), "user_id": user_id, "client_key": key(), "account_id": None,
             "to_account_id": None, "category": None, "description": None, "note": None,
             "reason": None, "khata_entry_id": None, "refund_of": None, "source": "app",
+            "schedule_id": None,
             "deleted_at": None, "created_at": stamp, "updated_at": stamp, **body,
         }  # fmt: skip
         self.txns.append(row)
@@ -122,6 +126,93 @@ class FakeLedger:
             return None
         t["deleted_at"] = now() if deleted else None
         return t
+
+    # Scheduled items (sql/012 pay_scheduled, skip_scheduled, schedule_answers) -----
+
+    async def list_schedule(self, user_id):
+        return [i for i in self.items if i["user_id"] == user_id]
+
+    async def get_schedule(self, user_id, item_id):
+        return next((i for i in self.items if i["id"] == item_id and i["user_id"] == user_id), None)
+
+    def _name_taken(self, user_id, name, but=None):
+        return any(
+            i["user_id"] == user_id and i["active"] and i["id"] != but
+            and i["name"].strip().lower() == name.strip().lower()
+            for i in self.items
+        )  # fmt: skip
+
+    async def create_schedule(self, user_id, body):
+        for i in self.items:
+            if i["user_id"] == user_id and i.get("client_key") == body["client_key"]:
+                return i, False
+        if self._name_taken(user_id, body["name"]):
+            raise MoneyConflictError("name")
+        row = {"id": key(), "user_id": user_id, "active": True, "created_at": now(), **body}
+        self.items.append(row)
+        return row, True
+
+    async def update_schedule(self, user_id, item_id, body):
+        row = await self.get_schedule(user_id, item_id)
+        if row is None or not row["active"]:
+            return None
+        if self._name_taken(user_id, body["name"], but=item_id):
+            raise MoneyConflictError("name")
+        row.update(body)
+        return row
+
+    async def cancel_schedule(self, user_id, item_id):
+        row = await self.get_schedule(user_id, item_id)
+        if row is None or not row["active"]:
+            return False
+        row["active"] = False
+        return True
+
+    async def schedule_answers(self, user_id):
+        from app.features.money.schedule import Answer
+
+        deleted = {t["id"] for t in self.txns if t["deleted_at"] is not None}
+        return {
+            (item_id, month): Answer(status=status, transaction_id=txn)
+            for (uid, item_id, month), (status, txn) in self.cycle_rows.items()
+            if uid == user_id and txn not in deleted
+        }
+
+    async def pay_scheduled(self, user_id, item_id, month, client_key, amount, account_id, on):
+        existing = await self.get_by_client_key(user_id, client_key)
+        if existing:
+            return existing
+        row = await self.get_schedule(user_id, item_id)
+        if row is None or (item_id, month) in await self.schedule_answers(user_id):
+            return None
+        kind = row["kind"]
+        txn, _ = await self.add_transaction(
+            user_id,
+            {
+                "client_key": client_key, "type": "income" if kind == "income" else "expense",
+                "amount_paise": amount, "account_id": account_id,
+                "category": row.get("category") or ("other" if kind in ("income", "other")
+                                                    else "subscriptions" if kind == "subscription"
+                                                    else "bills"),
+                "description": row["name"], "occurred_on": on.isoformat(), "schedule_id": item_id,
+            },
+        )  # fmt: skip
+        self.cycle_rows[(user_id, item_id, month)] = ("paid", txn["id"])
+        return txn
+
+    async def skip_scheduled(self, user_id, item_id, month):
+        if await self.get_schedule(user_id, item_id) is None:
+            return False
+        if (item_id, month) in await self.schedule_answers(user_id):
+            return False
+        self.cycle_rows[(user_id, item_id, month)] = ("skipped", None)
+        return True
+
+    async def unskip_scheduled(self, user_id, item_id, month):
+        if self.cycle_rows.get((user_id, item_id, month), (None,))[0] != "skipped":
+            return False
+        del self.cycle_rows[(user_id, item_id, month)]
+        return True
 
     # Test helpers ----------------------------------------------------------------
 
@@ -268,6 +359,27 @@ class FakeMoney(FakeLedger):
             months[month] = None
             sub.active = False
         return True
+
+    async def list_schedule(self, user_id):
+        old = [
+            {
+                "id": s.id, "user_id": user_id, "name": s.name, "amount_paise": s.amount_paise,
+                "billing_day": s.billing_day, "starts_on": s.starts_on.isoformat(), "active": s.active,
+                "created_at": s.created_at.isoformat(), "kind": "subscription", "frequency": "monthly",
+                "first_due_on": None, "reminder": True,
+            }
+            for s in self.subs.get(user_id, [])
+        ]  # fmt: skip
+        return old + await super().list_schedule(user_id)
+
+    async def schedule_answers(self, user_id):
+        from app.features.money.schedule import Answer
+
+        answers = await super().schedule_answers(user_id)
+        for sub_id, months in (await self.list_cycle_months(user_id)).items():
+            for month in months:
+                answers[(sub_id, month)] = Answer(status="paid", transaction_id=None)
+        return answers
 
     async def list_cycle_months(self, user_id):
         deleted = {t["id"] for t in self.txns if t["deleted_at"] is not None}

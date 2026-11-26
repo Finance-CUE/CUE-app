@@ -8,6 +8,7 @@ repository the money and ledger routers share.
 from datetime import UTC, date, datetime
 
 from app.features.money.ledger import Account, Txn
+from app.features.money.schedule import Answer, Item
 from app.features.money.ledger_schemas import AccountCreate, AccountUpdate
 from app.features.money.schemas import KhataCreate, KhataEntry, SpendCreate
 from app.features.money.repository import (
@@ -34,6 +35,25 @@ def to_ledger_txn(row: dict) -> Txn:
         to_account_id=row.get("to_account_id"),
         khata_entry_id=row.get("khata_entry_id"),
         category=row.get("category"),
+    )
+
+
+def to_schedule_item(row: dict) -> Item:
+    first_due = row.get("first_due_on")
+    return Item(
+        id=row["id"],
+        name=row["name"],
+        kind=row.get("kind") or "subscription",
+        frequency=row.get("frequency") or "monthly",
+        amount_paise=int(row["amount_paise"]),
+        billing_day=int(row["billing_day"]),
+        starts_on=date.fromisoformat(row["starts_on"]),
+        first_due_on=date.fromisoformat(first_due) if first_due else None,
+        active=bool(row["active"]),
+        account_id=row.get("account_id"),
+        category=row.get("category"),
+        variable=bool(row.get("variable", False)),
+        reminder=bool(row.get("reminder", True)),
     )
 
 
@@ -249,6 +269,118 @@ class LedgerRepository(MoneyRepository):
         for row in rows or []:
             months.setdefault(row["subscription_id"], set()).add(date.fromisoformat(row["month"]))
         return months
+
+    # Scheduled items (sql/012) -------------------------------------------------
+
+    async def list_schedule(self, user_id: str) -> list[dict]:
+        """Every scheduled item, cancelled ones included (their answers stay in the calendar)."""
+        return await self._list("subscriptions", user_id, "created_at.asc")
+
+    async def get_schedule(self, user_id: str, item_id: str) -> dict | None:
+        rows = await self._request(
+            "GET",
+            "subscriptions",
+            params={"id": f"eq.{_uid(item_id)}", "user_id": f"eq.{_uid(user_id)}", "select": "*"},
+        )
+        return rows[0] if rows else None
+
+    async def create_schedule(self, user_id: str, body: dict) -> tuple[dict, bool]:
+        """(row, created). A repeat client key returns the item it already made;
+        MoneyConflictError when an active item already has the name."""
+        try:
+            return await self._insert("subscriptions", user_id, body), True
+        except MoneyConflictError:
+            rows = await self._request(
+                "GET",
+                "subscriptions",
+                params={
+                    "user_id": f"eq.{_uid(user_id)}",
+                    "client_key": f"eq.{_uid(body['client_key'])}",
+                    "select": "*",
+                },
+            )
+            if not rows:
+                raise
+            return rows[0], False
+
+    async def update_schedule(self, user_id: str, item_id: str, body: dict) -> dict | None:
+        """Active items only. MoneyConflictError when another active item has the name."""
+        rows = await self._request(
+            "PATCH",
+            "subscriptions",
+            params={"id": f"eq.{_uid(item_id)}", "user_id": f"eq.{_uid(user_id)}", "active": "is.true"},
+            json=body,
+            prefer=_REP,
+        )
+        return rows[0] if rows else None
+
+    async def cancel_schedule(self, user_id: str, item_id: str) -> bool:
+        rows = await self._request(
+            "PATCH",
+            "subscriptions",
+            params={
+                "id": f"eq.{_uid(item_id)}",
+                "user_id": f"eq.{_uid(user_id)}",
+                "active": "is.true",
+                "select": "id",
+            },
+            json={"active": False},
+            prefer=_REP,
+        )
+        return bool(rows)
+
+    async def schedule_answers(self, user_id: str) -> dict[tuple[str, date], Answer]:
+        """Answers per (item, month); a paid month whose entry was deleted is open again."""
+        rows = await self._request("POST", "rpc/schedule_answers", json={"p_user": _uid(user_id)})
+        return {
+            (r["subscription_id"], date.fromisoformat(r["month"])): Answer(
+                status="paid" if r["status"] == "logged" else "skipped",
+                transaction_id=r.get("transaction_id"),
+            )
+            for r in rows or []
+        }
+
+    async def pay_scheduled(
+        self, user_id: str, item_id: str, month: date, client_key: str, amount: int, account_id: str, on: date
+    ) -> dict | None:
+        """The entry made (or made already, on a retry); None when the month was answered."""
+        row = await self._rpc(
+            "pay_scheduled",
+            {
+                "p_user": _uid(user_id),
+                "p_schedule": _uid(item_id),
+                "p_month": month.isoformat(),
+                "p_client_key": _uid(client_key),
+                "p_amount": amount,
+                "p_account": _uid(account_id),
+                "p_on": on.isoformat(),
+            },
+        )
+        return row if row and row.get("id") is not None else None
+
+    async def skip_scheduled(self, user_id: str, item_id: str, month: date) -> bool:
+        result = await self._request(
+            "POST",
+            "rpc/skip_scheduled",
+            json={"p_user": _uid(user_id), "p_schedule": _uid(item_id), "p_month": month.isoformat()},
+        )
+        return result is True
+
+    async def unskip_scheduled(self, user_id: str, item_id: str, month: date) -> bool:
+        """Undo a Skip: the month is due again."""
+        rows = await self._request(
+            "DELETE",
+            "subscription_cycles",
+            params={
+                "user_id": f"eq.{_uid(user_id)}",
+                "subscription_id": f"eq.{_uid(item_id)}",
+                "month": f"eq.{month.isoformat()}",
+                "status": "eq.skipped",
+                "select": "id",
+            },
+            prefer=_REP,
+        )
+        return bool(rows)
 
     async def _rpc(self, name: str, args: dict) -> dict | None:
         row = await self._request("POST", f"rpc/{name}", json=args)
