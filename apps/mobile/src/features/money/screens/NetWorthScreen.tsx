@@ -1,4 +1,4 @@
-import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
@@ -10,7 +10,7 @@ import { NetWorthChart } from '../charts/NetWorthChart';
 import { historyNote, RANGES, tooltipDay } from '../charts/model';
 import { toISODate } from '../dates';
 import { usePrivacyStore, useRupees } from '../privacy';
-import { useNetWorth, useNetWorthHistory, usePosition, useToday } from '../hooks';
+import { useGroups, useNetWorth, useNetWorthHistory, usePosition, useToday } from '../hooks';
 import { Sheet } from '../sheets/Sheet';
 import { breakdown, changeLine, netWorthSentence } from '../today/model';
 import { CardError, Eyebrow, Skeleton, TodayCard } from '../today/parts';
@@ -44,7 +44,8 @@ function NetWorthBody() {
   const nw = netWorth.data;
   const note = history.data ? historyNote(history.data, days, todayISO) : null;
   const change = nw ? changeLine(nw.change_this_month_paise, formatRupees) : null;
-  const table = nw ? breakdown(nw, nw.accounts) : null;
+  const groups = useGroups();
+  const table = nw ? breakdown(nw, nw.accounts, (groups.data?.groups.length ?? 0) > 0) : null;
   // "Tap opens" (spec 4.3): Khata for money lent or borrowed; the account
   // itself when there is exactly one of that kind. Other rows don't respond yet.
   const only = (pick: (a: Account) => boolean) => {
@@ -52,7 +53,8 @@ function NetWorthBody() {
     return found.length === 1 ? () => router.push(`/account/${found[0].id}`) : undefined;
   };
   const opens = (label: string): (() => void) | undefined => {
-    if (label === 'Money lent' || label === 'Money borrowed') return () => router.push('/khata');
+    if (label === 'Money lent' || label === 'Money borrowed') return () => router.push('/khata?tab=personal' as Href);
+    if (label === 'Owed to you in groups' || label === 'You owe in groups') return () => router.push('/khata?tab=groups' as Href);
     if (label === 'Bank accounts') return only((a) => a.kind === 'savings' || a.kind === 'current');
     if (label === 'Cash') return only((a) => a.kind === 'cash');
     if (label === 'Credit card outstanding') return only((a) => a.kind === 'credit_card');

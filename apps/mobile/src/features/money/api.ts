@@ -33,6 +33,14 @@ import type {
   JarInput,
   JarMove,
   Jars,
+  Group,
+  GroupDetail,
+  GroupExpense,
+  GroupExpenseInput,
+  Groups,
+  GroupSettlement,
+  GroupSettlementInput,
+  PersonSettleInput,
 } from '@/features/money/types';
 
 export async function fetchSpends(start: string, end: string): Promise<Spend[]> {
@@ -306,4 +314,78 @@ export async function jarAction({
   today: string;
 }): Promise<void> {
   await api.post(`/money/jars/${id}/${action}`, undefined, { params: { today } });
+}
+
+// P3: shared money ----------------------------------------------------------------------
+
+/** A part (or full) payment with one person. 409 when it is more than is open and allow_over is off. */
+export async function settlePerson(input: PersonSettleInput): Promise<void> {
+  await api.post('/money/khata/settle-person', input);
+}
+
+export async function fetchGroups(): Promise<Groups> {
+  return (await api.get<Groups>('/money/groups')).data;
+}
+
+export async function fetchGroup(id: string): Promise<GroupDetail> {
+  return (await api.get<GroupDetail>(`/money/groups/${id}`)).data;
+}
+
+export async function createGroup(input: { client_key: string; name: string; icon: string; members: string[] }): Promise<Group> {
+  return (await api.post<Group>('/money/groups', input)).data;
+}
+
+export async function updateGroup({
+  id,
+  ...input
+}: {
+  id: string;
+  name: string;
+  icon: string;
+  add_members: string[];
+  remove_members: string[];
+}): Promise<Group> {
+  return (await api.patch<Group>(`/money/groups/${id}`, input)).data;
+}
+
+export async function archiveGroup(id: string): Promise<void> {
+  await api.post(`/money/groups/${id}/archive`);
+}
+
+export async function addGroupExpense({
+  groupId,
+  today,
+  ...input
+}: GroupExpenseInput & { groupId: string; today: string }): Promise<GroupExpense> {
+  return (await api.post<GroupExpense>(`/money/groups/${groupId}/expenses`, input, { params: { today } })).data;
+}
+
+export async function editGroupExpense({
+  id,
+  today,
+  ...input
+}: GroupExpenseInput & { id: string; today: string }): Promise<GroupExpense> {
+  return (await api.put<GroupExpense>(`/money/groups/expenses/${id}`, input, { params: { today } })).data;
+}
+
+/** Delete (or Undo with restore) a group expense or settlement. */
+export async function setGroupEntryDeleted({
+  kind,
+  id,
+  deleted,
+}: {
+  kind: 'expenses' | 'settlements';
+  id: string;
+  deleted: boolean;
+}): Promise<void> {
+  if (deleted) await api.delete(`/money/groups/${kind}/${id}`);
+  else await api.post(`/money/groups/${kind}/${id}/restore`);
+}
+
+export async function addGroupSettlement({
+  groupId,
+  today,
+  ...input
+}: GroupSettlementInput & { groupId: string; today: string }): Promise<GroupSettlement> {
+  return (await api.post<GroupSettlement>(`/money/groups/${groupId}/settlements`, input, { params: { today } })).data;
 }

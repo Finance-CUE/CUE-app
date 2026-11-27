@@ -61,21 +61,33 @@ export function netWorthSentence(nw: NetWorth, fmt: Fmt): string {
 
 export type BreakdownRow = { label: string; paise: number };
 
-/** Section 4.3 tables. Loans are the "other" liabilities until loan accounts exist. */
-export function breakdown(nw: NetWorth, accounts: Account[]) {
+/**
+ * Section 4.3 tables. Loans are the "other" liabilities until loan accounts exist.
+ * Group balances get their own rows (suggestion 10), shown only once the user
+ * has groups, so personal Khata and groups are never counted twice.
+ */
+export function breakdown(nw: NetWorth, accounts: Account[], hasGroups = false) {
   const bank = sumOf(accounts, (a) => a.kind === 'savings' || a.kind === 'current');
   const cash = sumOf(accounts, (a) => a.kind === 'cash');
+  // Older servers send only the combined figures.
+  const lent = nw.money_lent_paise ?? nw.receivables_paise;
+  const borrowed = nw.money_borrowed_paise ?? nw.borrowings_paise;
+  const owed = nw.group_owed_paise ?? 0;
+  const owe = nw.group_owe_paise ?? 0;
+  const groups = hasGroups || owed !== 0 || owe !== 0;
   return {
     assets: [
       { label: 'Bank accounts', paise: bank },
       { label: 'Cash', paise: cash },
-      { label: 'Money lent', paise: nw.receivables_paise },
+      { label: 'Money lent', paise: lent },
+      ...(groups ? [{ label: 'Owed to you in groups', paise: owed }] : []),
       { label: 'Other assets', paise: nw.other_assets_paise },
     ] satisfies BreakdownRow[],
     liabilities: [
       { label: 'Credit card outstanding', paise: nw.card_dues_paise },
       { label: 'Loans', paise: nw.other_liabilities_paise },
-      { label: 'Money borrowed', paise: nw.borrowings_paise },
+      { label: 'Money borrowed', paise: borrowed },
+      ...(groups ? [{ label: 'You owe in groups', paise: owe }] : []),
     ] satisfies BreakdownRow[],
     totalAssets: nw.total_assets_paise,
     totalLiabilities: nw.total_liabilities_paise,

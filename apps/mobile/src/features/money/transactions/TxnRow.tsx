@@ -2,6 +2,7 @@ import { Text, TouchableOpacity, View } from 'react-native';
 
 import { COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
 import { CategoryIcon, RupeeIcon, SwapIcon } from '../components/icons';
+import { useGroups } from '../hooks';
 import { useRupees } from '../privacy';
 import type { Account, LedgerTxn } from '../types';
 import { rowFor, type Tone } from './model';
@@ -27,7 +28,9 @@ const POSITIVE_INK = '#56704D';
 export function TxnRow({ txn, accounts, onPress }: { txn: LedgerTxn; accounts: Map<string, Account>; onPress: () => void }) {
   const theme = useDashboardTheme();
   const formatRupees = useRupees();
-  const row = rowFor(txn, accounts, formatRupees);
+  const groups = useGroups().data?.groups;
+  const names = new Map((groups ?? []).map((g) => [g.id, g.name]));
+  const row = rowFor(txn, accounts, formatRupees, names);
   const tone: Record<Tone, string> = { ink: COLORS.text, positive: POSITIVE_INK, soft: COLORS.muted };
   const icon =
     txn.type === 'expense' || txn.type === 'refund' ? (

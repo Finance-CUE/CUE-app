@@ -3,8 +3,8 @@ import { Alert, Text, TouchableOpacity, View } from 'react-native';
 
 import { COLORS, FONT } from '@/features/money/palette';
 import { toErrorMessage } from '@/lib/api';
-import { Card, PrimaryButton } from '../components/ui';
-import { formatDateTime } from '../dates';
+import { Card, PrimaryButton, SecondaryButton } from '../components/ui';
+import { formatDate, formatDateTime } from '../dates';
 import { useRupees } from '../privacy';
 import { useDeleteKhata, useSettleKhata } from '../hooks';
 import type { PersonBalance } from '../khata';
@@ -15,9 +15,12 @@ import { FormError, Sheet } from './Sheet';
 export function PersonSheet({
   person,
   onClose,
+  onRecordPayment,
 }: {
   person: PersonBalance | undefined;
   onClose: () => void;
+  /** Part payments (P3): opens the Settlement sheet for this person. */
+  onRecordPayment?: (person: PersonBalance) => void;
 }) {
   // Masked while the eye toggle hides amounts.
   const formatRupees = useRupees();
@@ -52,8 +55,8 @@ export function PersonSheet({
     Alert.alert(
       lent ? `How did ${e.person} pay you back?` : `How did you pay ${e.person} back?`,
       lent
-        ? `${formatRupees(e.amount_paise)} will be added back to your cash or bank balance.`
-        : `${formatRupees(e.amount_paise)} will be taken from your cash or bank balance.`,
+        ? `${formatRupees(e.outstanding_paise ?? e.amount_paise)} will be added back to your cash or bank balance.`
+        : `${formatRupees(e.outstanding_paise ?? e.amount_paise)} will be taken from your cash or bank balance.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Cash', onPress: () => pay('cash') },
@@ -63,7 +66,22 @@ export function PersonSheet({
   };
 
   return (
-    <Sheet visible={person !== undefined} onClose={onClose} title={person?.person ?? ''}>
+    <Sheet
+      visible={person !== undefined}
+      onClose={onClose}
+      title={person?.person ?? ''}
+      subtitle={
+        person
+          ? person.net_paise > 0
+            ? `Owes you ${formatRupees(person.net_paise)}`
+            : person.net_paise < 0
+              ? `You owe ${formatRupees(-person.net_paise)}`
+              : 'All square'
+          : undefined
+      }>
+      {person && onRecordPayment ? (
+        <PrimaryButton label="Record a payment" onPress={() => onRecordPayment(person)} disabled={busy} />
+      ) : null}
       <FormError message={error} />
       {person?.entries.map((e) => (
         <Card key={e.id} style={{ gap: 8 }}>
@@ -71,12 +89,19 @@ export function PersonSheet({
             <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text }}>{e.direction === 'lent' ? 'You lent' : 'You borrowed'}</Text>
             <Text style={{ fontFamily: FONT.semibold, fontSize: 15, color: COLORS.text }}>{formatRupees(e.amount_paise)}</Text>
           </View>
+          {e.outstanding_paise !== undefined && e.outstanding_paise !== null && e.outstanding_paise !== e.amount_paise ? (
+            <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text }}>
+              {formatRupees(e.outstanding_paise)} still open after part payments
+            </Text>
+          ) : null}
+          {e.due_on ? (
+            <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text }}>Due {formatDate(e.due_on)}</Text>
+          ) : null}
           {e.note ? <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text }}>{e.note}</Text> : null}
           <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>{formatDateTime(e.created_at)}</Text>
-          <PrimaryButton
-            label={e.direction === 'lent' ? 'Mark received' : 'Mark paid back'}
+          <SecondaryButton
+            label={e.direction === 'lent' ? 'Mark fully received' : 'Mark fully paid back'}
             onPress={() => markSettled(e)}
-            disabled={busy}
           />
           <TouchableOpacity
             accessibilityRole="button"

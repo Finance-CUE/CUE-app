@@ -1,3 +1,4 @@
+import { type Href, router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 
@@ -28,13 +29,17 @@ type Open =
 export function useTxnFlows({
   accounts,
   defaultDate,
-  onLendBorrow = () => {},
+  onLendBorrow,
+  onGroupExpense,
+  onSettlement,
   onSubscription = () => {},
   onGoalJar,
 }: {
   accounts: Account[];
   defaultDate: string;
-  onLendBorrow?: () => void;
+  onLendBorrow?: (direction: 'lent' | 'borrowed') => void;
+  onGroupExpense?: () => void;
+  onSettlement?: () => void;
   onSubscription?: () => void;
   onGoalJar?: () => void;
 }) {
@@ -51,6 +56,13 @@ export function useTxnFlows({
   const openQuick = (kind: QuickAddChoice, account: string | null = null) =>
     setOpen({ name: 'quick', kind, account, seed: null });
   const openTxn = (txn: LedgerTxn) => {
+    // A group row is changed in its group: the expense editor opens there.
+    if (txn.group_id) {
+      router.push(
+        (txn.group_expense_id ? `/group/${txn.group_id}?expense=${txn.group_expense_id}` : `/group/${txn.group_id}`) as Href,
+      );
+      return;
+    }
     setDeleteError(null);
     setOpen({ name: 'detail', txn });
   };
@@ -108,10 +120,30 @@ export function useTxnFlows({
         defaultDate={defaultDate}
         onClose={close}
         onSaved={onSaved}
-        onLendBorrow={() => {
-          close();
-          onLendBorrow();
-        }}
+        onLendBorrow={
+          onLendBorrow
+            ? (direction) => {
+                close();
+                onLendBorrow(direction);
+              }
+            : undefined
+        }
+        onGroupExpense={
+          onGroupExpense
+            ? () => {
+                close();
+                onGroupExpense();
+              }
+            : undefined
+        }
+        onSettlement={
+          onSettlement
+            ? () => {
+                close();
+                onSettlement();
+              }
+            : undefined
+        }
         onGoalJar={
           onGoalJar
             ? () => {

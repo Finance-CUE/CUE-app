@@ -8,7 +8,9 @@ export function personBalances(entries: KhataEntry[]): PersonBalance[] {
   for (const e of entries) {
     const key = e.person.trim().toLowerCase();
     const p = map.get(key) ?? { key, person: e.person.trim(), net_paise: 0, entries: [] };
-    p.net_paise += e.direction === 'lent' ? e.amount_paise : -e.amount_paise;
+    // What is still open after part payments (older servers send only the amount).
+    const open = e.outstanding_paise ?? e.amount_paise;
+    p.net_paise += e.direction === 'lent' ? open : -open;
     p.entries.push(e);
     map.set(key, p);
   }

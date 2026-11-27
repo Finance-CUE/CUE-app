@@ -26,6 +26,9 @@ export type KhataEntry = {
   amount_paise: number;
   note: string | null;
   created_at: string;
+  /** P3: what is still open after part payments (older servers leave it out). */
+  outstanding_paise?: number | null;
+  due_on?: string | null;
 };
 
 export type TrendPoint = { date: string; balance_paise: number | null; spent_paise: number };
@@ -73,6 +76,9 @@ export type KhataInput = {
   account_id?: string;
   /** Makes a retry return the same entry instead of saving a second one. */
   client_key?: string;
+  /** P3 Quick Add: when it happened (default today) and an optional due date. */
+  occurred_on?: string;
+  due_on?: string | null;
 };
 /** GET /money/net-worth: section 8 figures as of `on`, plus open accounts. */
 export type NetWorth = {
@@ -89,6 +95,11 @@ export type NetWorth = {
   /** Null hides the line: no full previous month yet. */
   change_this_month_paise: number | null;
   accounts: Account[];
+  /** P3 breakdown rows: personal Khata and groups apart (suggestion 10). */
+  money_lent_paise?: number;
+  money_borrowed_paise?: number;
+  group_owed_paise?: number;
+  group_owe_paise?: number;
 };
 export type TxnType =
   | 'opening'
@@ -114,6 +125,10 @@ export type LedgerTxn = {
   reason: string | null;
   /** The scheduled item it belongs to: a payment marked paid, or saved with Recurring on. */
   schedule_id?: string | null;
+  /** P3 group rows: the group and the expense or settlement they come from. */
+  group_id?: string | null;
+  group_expense_id?: string | null;
+  group_settlement_id?: string | null;
   occurred_on: string;
   created_at: string;
   deleted: boolean;
@@ -370,4 +385,91 @@ export type JarInput = {
   account_id: string;
   method: JarMethod;
   contribution_paise: number | null;
+};
+
+// P3: shared money (spec 5 and 8) ---------------------------------------------------
+
+export type PersonSettleInput = {
+  client_key: string;
+  person: string;
+  /** They paid the user (reduces money lent); otherwise the user paid them. */
+  from_them: boolean;
+  amount_paise: number;
+  account_id: string;
+  occurred_on: string;
+  /** Record more than is open; the rest becomes an entry the other way. */
+  allow_over?: boolean;
+};
+
+export type Group = {
+  id: string;
+  name: string;
+  icon: string;
+  archived: boolean;
+  /** Positive: owed to the user. Negative: the user owes. */
+  my_balance_paise: number;
+  member_count: number;
+  created_at: string;
+};
+
+export type Groups = { owed_to_you_paise: number; you_owe_paise: number; groups: Group[] };
+
+export type GroupMember = { id: string; name: string; is_me: boolean; removed: boolean; balance_paise: number };
+
+export type GroupExpense = {
+  id: string;
+  description: string;
+  category: string;
+  amount_paise: number;
+  paid_by: string;
+  split: 'equal' | 'exact';
+  shares: Record<string, number>;
+  my_share_paise: number;
+  occurred_on: string;
+  note: string | null;
+  account_id: string | null;
+  created_at: string;
+};
+
+export type GroupSettlement = {
+  id: string;
+  from_member: string;
+  to_member: string;
+  amount_paise: number;
+  occurred_on: string;
+  note: string | null;
+  account_id: string | null;
+  created_at: string;
+};
+
+export type GroupDetail = {
+  group: Group;
+  members: GroupMember[];
+  settle_up: { from_member: string; to_member: string; amount_paise: number }[];
+  expenses: GroupExpense[];
+  settlements: GroupSettlement[];
+};
+
+export type GroupExpenseInput = {
+  client_key: string;
+  description: string;
+  category: string;
+  amount_paise: number;
+  paid_by: string;
+  split: 'equal' | 'exact';
+  participants: string[];
+  shares: Record<string, number>;
+  occurred_on: string;
+  note?: string | null;
+  account_id?: string | null;
+};
+
+export type GroupSettlementInput = {
+  client_key: string;
+  from_member: string;
+  to_member: string;
+  amount_paise: number;
+  occurred_on: string;
+  note?: string | null;
+  account_id?: string | null;
 };

@@ -36,13 +36,66 @@ export function loggedTime(createdAt: string): string {
 const nameOf = (accounts: Map<string, Account>, id: string | null) => (id ? accounts.get(id)?.name : undefined);
 const join = (...parts: (string | undefined | null)[]) => parts.filter(Boolean).join(' · ');
 
+/** A group expense's one row: the user's share and what they paid (collapseGroupRows). */
+export type GroupRowTxn = LedgerTxn & { group_share_paise?: number; group_paid_paise?: number };
+
+/**
+ * A group expense writes up to two ledger rows (your share, and what others owe
+ * you or you owe them). Lists show one row per expense, carrying the share and
+ * what the user paid; `amount_paise` stays the share, so day totals count it as
+ * spending exactly once.
+ */
+export function collapseGroupRows(txns: LedgerTxn[]): GroupRowTxn[] {
+  const byExpense = new Map<string, LedgerTxn[]>();
+  const out: GroupRowTxn[] = [];
+  for (const t of txns) {
+    if (!t.group_expense_id) {
+      out.push(t);
+      continue;
+    }
+    const list = byExpense.get(t.group_expense_id);
+    if (list) list.push(t);
+    else {
+      byExpense.set(t.group_expense_id, [t]);
+      out.push(t); // a placeholder, replaced below in the same position
+    }
+  }
+  return out.map((t) => {
+    if (!t.group_expense_id) return t;
+    const rows = byExpense.get(t.group_expense_id) ?? [t];
+    const share = rows.find((r) => r.type === 'expense');
+    const paid = rows.filter((r) => r.account_id).reduce((s, r) => s + r.amount_paise, 0);
+    const rep = share ?? rows[0];
+    return { ...rep, group_share_paise: share?.amount_paise ?? 0, group_paid_paise: paid };
+  });
+}
+
 /** One row as the spec's "Row by type" table shows it. */
-export function rowFor(t: LedgerTxn, accounts: Map<string, Account>, fmt: Fmt): TxnRow {
+export function rowFor(t: GroupRowTxn, accounts: Map<string, Account>, fmt: Fmt, groups?: Map<string, string>): TxnRow {
   const account = nameOf(accounts, t.account_id);
   const time = loggedTime(t.created_at);
   const amount = fmt(Math.abs(t.amount_paise));
   const person = t.description ?? 'Someone';
+  const group = t.group_id ? (groups?.get(t.group_id) ?? 'Group') : null;
   let row: Omit<TxnRow, 'spoken'>;
+  if (t.group_expense_id) {
+    // "Dinner · Goa Trip · Your share ₹1,000", "−₹3,000 paid".
+    const share = t.group_share_paise ?? 0;
+    const paid = t.group_paid_paise ?? 0;
+    row = {
+      title: t.description ?? 'Group expense',
+      subtitle: join(group, share > 0 ? `Your share ${fmt(share)}` : 'Not your share', paid === 0 ? 'someone else paid' : account),
+      amount: paid > 0 ? `− ${fmt(paid)} paid` : `− ${fmt(share)}`,
+      tone: 'ink',
+    };
+    return { ...row, spoken: `${row.title}, ${row.amount.replace('−', 'minus')}, ${row.subtitle}` };
+  }
+  if (t.group_settlement_id) {
+    // "Megha paid you · Goa Trip", "+₹1,000 settled".
+    const into = t.type === 'repayment_received';
+    row = { title: person, subtitle: join(group, account), amount: `${into ? '+' : '−'} ${amount} settled`, tone: into ? 'positive' : 'ink' };
+    return { ...row, spoken: `${row.title}, ${row.amount.replace('−', 'minus').replace('+', 'plus')}, ${row.subtitle}` };
+  }
   switch (t.type) {
     case 'expense':
       row = { title: t.description ?? categoryName(t.category), subtitle: join(categoryName(t.category), account, time), amount: `− ${amount}`, tone: 'ink' };
@@ -96,16 +149,16 @@ export function newestFirst(txns: LedgerTxn[]): LedgerTxn[] {
 }
 
 /** Today's card: that day's latest five, never the opening balances. */
-export function latestForDay(txns: LedgerTxn[], day: string, limit = 5): LedgerTxn[] {
-  return newestFirst(txns.filter((t) => t.occurred_on === day && t.type !== 'opening' && !t.deleted)).slice(0, limit);
+export function latestForDay(txns: LedgerTxn[], day: string, limit = 5): GroupRowTxn[] {
+  return collapseGroupRows(newestFirst(txns.filter((t) => t.occurred_on === day && t.type !== 'opening' && !t.deleted))).slice(0, limit);
 }
 
-export type DayGroup = { day: string; spentPaise: number; receivedPaise: number; items: LedgerTxn[] };
+export type DayGroup = { day: string; spentPaise: number; receivedPaise: number; items: GroupRowTxn[] };
 
 /** History day groups with day totals: spent (expenses less refunds) and received (income). */
 export function dayGroups(txns: LedgerTxn[]): DayGroup[] {
   const groups = new Map<string, DayGroup>();
-  for (const t of newestFirst(txns)) {
+  for (const t of collapseGroupRows(newestFirst(txns))) {
     const g = groups.get(t.occurred_on) ?? { day: t.occurred_on, spentPaise: 0, receivedPaise: 0, items: [] };
     if (t.type === 'expense') g.spentPaise += t.amount_paise;
     if (t.type === 'refund') g.spentPaise -= t.amount_paise;
@@ -116,17 +169,18 @@ export function dayGroups(txns: LedgerTxn[]): DayGroup[] {
   return [...groups.values()];
 }
 
-export type TypeFilter = 'all' | 'expense' | 'income' | 'transfer' | 'khata' | 'recurring' | 'adjustment';
+export type TypeFilter = 'all' | 'expense' | 'income' | 'transfer' | 'khata' | 'group' | 'recurring' | 'adjustment';
 export const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'expense', label: 'Expenses' },
   { value: 'income', label: 'Income' },
   { value: 'transfer', label: 'Transfers' },
   { value: 'khata', label: 'Khata' },
+  { value: 'group', label: 'Group expenses' },
   { value: 'recurring', label: 'Recurring' },
   { value: 'adjustment', label: 'Adjustments' },
 ];
-const TYPES: Record<Exclude<TypeFilter, 'all' | 'recurring'>, TxnType[]> = {
+const TYPES: Record<Exclude<TypeFilter, 'all' | 'recurring' | 'group'>, TxnType[]> = {
   expense: ['expense', 'refund'],
   income: ['income'],
   transfer: ['transfer'],
@@ -147,7 +201,11 @@ export function applyFilters(txns: LedgerTxn[], f: Filters): LedgerTxn[] {
   return txns.filter((t) => {
     if (t.deleted) return false;
     // Recurring: entries that belong to a scheduled item (marked paid, or saved with Recurring on).
-    if (f.type === 'recurring' ? !t.schedule_id : f.type !== 'all' && !TYPES[f.type].includes(t.type)) return false;
+    if (f.type === 'recurring' && !t.schedule_id) return false;
+    // Group expenses and settlements; Khata is personal only.
+    if (f.type === 'group' && !t.group_id) return false;
+    if (f.type === 'khata' && t.group_id) return false;
+    if (f.type !== 'all' && f.type !== 'recurring' && f.type !== 'group' && !TYPES[f.type].includes(t.type)) return false;
     if (f.accountId && t.account_id !== f.accountId && t.to_account_id !== f.accountId) return false;
     if (f.category && t.category !== f.category) return false;
     if (!q) return true;
@@ -160,9 +218,9 @@ export function applyFilters(txns: LedgerTxn[], f: Filters): LedgerTxn[] {
 }
 
 /** The Quick Add form edits and duplicates these in P0; Khata rows are changed in Khata. */
-export const isEditable = (t: LedgerTxn) => ['expense', 'income', 'transfer'].includes(t.type);
+export const isEditable = (t: LedgerTxn) => !t.group_id && ['expense', 'income', 'transfer'].includes(t.type);
 export const canDuplicate = isEditable;
-export const isDeletable = (t: LedgerTxn) => isEditable(t) || t.type === 'refund' || t.type === 'adjustment';
+export const isDeletable = (t: LedgerTxn) => !t.group_id && (isEditable(t) || t.type === 'refund' || t.type === 'adjustment');
 
 /** "Delete Swiggy, ₹450 on 12 Nov? Your HDFC balance and net worth will update." */
 export function deleteQuestion(t: LedgerTxn, accounts: Map<string, Account>, fmt: Fmt): string {

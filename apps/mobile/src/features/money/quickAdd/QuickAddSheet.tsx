@@ -3,7 +3,7 @@ import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { newClientKey } from '../accounts';
-import { ClockIcon, RupeeIcon, SavingsIcon, SwapIcon } from '../components/icons';
+import { ClockIcon, InIcon, KhataIcon, OutIcon, RupeeIcon, SavingsIcon, SwapIcon } from '../components/icons';
 import { ChipRow, PrimaryButton, TextField } from '../components/ui';
 import { daysBefore, parseDisplayDate, toDisplayDate, toISODate } from '../dates';
 import { formatRupees as plainRupees, paiseToInput, parseRupeesToPaise } from '../format';
@@ -70,6 +70,8 @@ export function QuickAddSheet({
   onClose,
   onSaved,
   onLendBorrow,
+  onGroupExpense,
+  onSettlement,
   onSubscription,
   onGoalJar,
 }: {
@@ -84,7 +86,11 @@ export function QuickAddSheet({
   seed?: Seed | null;
   onClose: () => void;
   onSaved: (saved: Saved) => void;
-  onLendBorrow: () => void;
+  /** Lend and Borrow tiles; hidden when not given. */
+  onLendBorrow?: (direction: 'lent' | 'borrowed') => void;
+  /** P3: Group Expense and Settlement tiles; hidden when not given. */
+  onGroupExpense?: () => void;
+  onSettlement?: () => void;
   onSubscription: () => void;
   /** The Goal Jar tile (P2); hidden when not given. */
   onGoalJar?: () => void;
@@ -257,9 +263,12 @@ export function QuickAddSheet({
           <Tile label="Expense" icon={<RupeeIcon color={theme.accentText} />} onPress={() => setKind('expense')} />
           <Tile label="Income" icon={<RupeeIcon color={theme.accentText} />} onPress={() => setKind('income')} />
           <Tile label="Transfer" icon={<SwapIcon color={theme.accentText} />} onPress={() => setKind('transfer')} />
-          <Tile label="Lend / Borrow" icon={<SwapIcon color={theme.accentText} />} onPress={onLendBorrow} />
+          {onLendBorrow ? <Tile label="Lend" icon={<OutIcon color={theme.accentText} />} onPress={() => onLendBorrow('lent')} /> : null}
+          {onLendBorrow ? <Tile label="Borrow" icon={<InIcon color={theme.accentText} />} onPress={() => onLendBorrow('borrowed')} /> : null}
           <Tile label="Subscription or bill" icon={<ClockIcon color={theme.accentText} />} onPress={onSubscription} />
           {onGoalJar ? <Tile label="Goal Jar" icon={<SavingsIcon color={theme.accentText} />} onPress={onGoalJar} /> : null}
+          {onGroupExpense ? <Tile label="Group Expense" icon={<KhataIcon color={theme.accentText} />} onPress={onGroupExpense} /> : null}
+          {onSettlement ? <Tile label="Settlement" icon={<SwapIcon color={theme.accentText} />} onPress={onSettlement} /> : null}
         </View>
         {open.length === 0 ? (
           <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>Add an account on Today first, so CUE knows where the money is.</Text>

@@ -23,7 +23,7 @@ import { leftToSpendLine } from '../month/model';
 import { useRupees } from '../privacy';
 import { useDueFlows } from '../scheduled/useDueFlows';
 import { AddAccountSheet } from '../sheets/AddAccountSheet';
-import { KhataSheet } from '../sheets/KhataSheet';
+import { useSharedFlows } from '../groups/useSharedFlows';
 import { AccountsCard } from '../today/AccountsCard';
 import { CashFlowCard } from '../today/CashFlowCard';
 import { GoalJarsCard } from '../today/GoalJarsCard';
@@ -36,7 +36,7 @@ import { MAX_WEEKS_AHEAD, PastDateBanner, TodayHeader } from '../today/TodayHead
 import { TodayTransactions } from '../transactions/TodayTransactions';
 import { useTxnFlows } from '../transactions/useTxnFlows';
 
-type SheetName = 'khata' | 'addAccount' | null;
+type SheetName = 'addAccount' | null;
 /** Scrolled this far, the header collapses to a 56px bar (spec 4.1). */
 const COLLAPSE_AT = 150;
 /** Overdue dues are looked for this far back; Coming up looks 30 days ahead (spec 4.8). */
@@ -108,11 +108,14 @@ export function TodayScreen() {
     }
   }, [jars.data, jarFlows]);
   const dueFlows = useDueFlows({ accounts });
+  const shared = useSharedFlows({ accounts });
   // Quick Add, a transaction's detail, Update balance and the Undo toast.
   const flows = useTxnFlows({
     accounts,
     defaultDate: selected,
-    onLendBorrow: () => setSheet('khata'),
+    onLendBorrow: (direction) => shared.openLend(direction),
+    onGroupExpense: () => shared.openGroupExpense(null),
+    onSettlement: () => shared.openSettlement(null),
     onSubscription: () => dueFlows.openAdd(),
     onGoalJar: () => jarFlows.openMove('add'),
   });
@@ -302,11 +305,11 @@ export function TodayScreen() {
       ) : null}
 
       <Fab onPress={() => openQuick(null)} accessibilityLabel="Log something" />
-      <KhataSheet visible={sheet === 'khata'} onClose={close} />
       <AddAccountSheet visible={sheet === 'addAccount'} onClose={close} />
       {flows.elements}
       {dueFlows.elements}
       {jarFlows.elements}
+      {shared.elements}
     </View>
   );
 }

@@ -89,6 +89,12 @@ export const useNetWorthHistory = (today: string, days: number) =>
     placeholderData: (prev) => prev,
   });
 
+export const useGroups = (enabled = true) =>
+  useQuery({ queryKey: ['money', 'groups'], queryFn: moneyApi.fetchGroups, enabled });
+
+export const useGroup = (id: string | null) =>
+  useQuery({ queryKey: ['money', 'group', id], queryFn: () => moneyApi.fetchGroup(id ?? ''), enabled: id !== null });
+
 export const useJars = (today: string) =>
   useQuery({ queryKey: ['money', 'jars', today], queryFn: () => moneyApi.fetchJars(today) });
 
@@ -149,6 +155,14 @@ export const useUpdateTransaction = () => useMoneyMutation(moneyApi.updateTransa
 export const useRestoreTransaction = () => useMoneyMutation(moneyApi.restoreTransaction);
 export const useSettleKhata = () => useMoneyMutation(moneyApi.settleKhata);
 export const useDeleteKhata = () => useMoneyMutation(moneyApi.deleteKhata);
+export const useSettlePerson = () => useMoneyMutation(moneyApi.settlePerson);
+export const useCreateGroup = () => useMoneyMutation(moneyApi.createGroup);
+export const useUpdateGroup = () => useMoneyMutation(moneyApi.updateGroup);
+export const useArchiveGroup = () => useMoneyMutation(moneyApi.archiveGroup);
+export const useAddGroupExpense = () => useMoneyMutation(moneyApi.addGroupExpense);
+export const useEditGroupExpense = () => useMoneyMutation(moneyApi.editGroupExpense);
+export const useSetGroupEntryDeleted = () => useMoneyMutation(moneyApi.setGroupEntryDeleted);
+export const useAddGroupSettlement = () => useMoneyMutation(moneyApi.addGroupSettlement);
 export const useCreateJar = () => useMoneyMutation(moneyApi.createJar);
 export const useUpdateJar = () => useMoneyMutation(moneyApi.updateJar);
 export const useMoveJar = () => useMoneyMutation(moneyApi.moveJar);
