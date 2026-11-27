@@ -2,7 +2,7 @@ CUE dashboard P2 test pass
 
 This build adds Goal Jars: set money aside for goals like a trip or a laptop, inside your own accounts, and watch each jar fill up.
 
-Install (Android only): open the APK link on your phone, tap Download, open the file, and allow "Install from this source" if Android asks. Install it over your current CUE: your account and data stay.
+Install (Android only): open the APK link on your phone, tap Download, open the file, and allow "Install from this source" if Android asks. Install it over your current CUE: your account and data stay. Settings › Apps › CUE should say version 1.2.2.
 
 Report each problem as: step number, what you did, what you saw, a screenshot or screen recording if possible.
 Amounts can be made up. CUE only records what you type; no real money moves.
