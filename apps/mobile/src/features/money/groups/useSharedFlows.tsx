@@ -12,7 +12,7 @@ import { GroupFormSheet } from './GroupFormSheet';
 import { SettlementSheet, type SettlementPreset } from './SettlementSheet';
 
 type Open =
-  | { name: 'khata'; direction: Direction }
+  | { name: 'khata'; direction: Direction; prefill?: { person?: string; amountPaise?: number; accountId?: string | null; occurredOn?: string } }
   | { name: 'expense'; groupId: string | null; expense: GroupExpense | null }
   | { name: 'settle'; preset: SettlementPreset | null }
   | { name: 'group'; detail: GroupDetail | null }
@@ -59,7 +59,12 @@ export function useSharedFlows({ accounts, onGroupCreated }: { accounts: Account
 
   const elements = (
     <>
-      <KhataSheet visible={open?.name === 'khata'} initialDirection={open?.name === 'khata' ? open.direction : 'lent'} onClose={close} />
+      <KhataSheet
+        visible={open?.name === 'khata'}
+        initialDirection={open?.name === 'khata' ? open.direction : 'lent'}
+        prefill={open?.name === 'khata' ? (open.prefill ?? null) : null}
+        onClose={close}
+      />
       <GroupExpenseSheet
         visible={open?.name === 'expense'}
         groupId={open?.name === 'expense' ? open.groupId : null}
@@ -93,7 +98,8 @@ export function useSharedFlows({ accounts, onGroupCreated }: { accounts: Account
   );
 
   return {
-    openLend: (direction: Direction = 'lent') => setOpen({ name: 'khata', direction }),
+    openLend: (direction: Direction = 'lent', prefill?: { person?: string; amountPaise?: number; accountId?: string | null; occurredOn?: string }) =>
+      setOpen({ name: 'khata', direction, prefill }),
     openGroupExpense: (groupId: string | null = null, expense: GroupExpense | null = null) => setOpen({ name: 'expense', groupId, expense }),
     openSettlement: (preset: SettlementPreset | null = null) => setOpen({ name: 'settle', preset }),
     openGroupForm: (detail: GroupDetail | null = null) => setOpen({ name: 'group', detail }),

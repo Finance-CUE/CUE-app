@@ -146,7 +146,7 @@ function AccountBody({ id }: { id: string }) {
               ) : (
                 <View>
                   {rows.map((t) => (
-                    <TxnRow key={t.id} txn={t} accounts={byId} onPress={() => flows.openTxn(t)} />
+                    <TxnRow key={t.id} txn={t} accounts={byId} onPress={() => flows.openTxn(t)} onLongPress={() => flows.fixCategory(t)} />
                   ))}
                 </View>
               )}

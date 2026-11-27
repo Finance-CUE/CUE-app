@@ -17,7 +17,10 @@ import { COLORS, FONT, HEADING_FONT, SHAPE, useDashboardTheme } from '@/features
 import { PlusIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { Fab } from '../components/ui';
 import { toISODate, weekDays, weekStartBack } from '../dates';
-import { useDues, useJars, useMonth, useNetWorth, useNetWorthHistory, useToday } from '../hooks';
+import { useDues, useJars, useMonth, useNetWorth, useNetWorthHistory, useNote, useToday } from '../hooks';
+import { AskSheet } from '../insights/AskSheet';
+import { askAbout, draftTxn, insightsRoute } from '../insights/model';
+import type { AskDraft } from '../types';
 import { useJarFlows } from '../jars/useJarFlows';
 import { leftToSpendLine } from '../month/model';
 import { useRupees } from '../privacy';
@@ -109,6 +112,19 @@ export function TodayScreen() {
   }, [jars.data, jarFlows]);
   const dueFlows = useDueFlows({ accounts });
   const shared = useSharedFlows({ accounts });
+  const note = useNote(todayISO);
+  // Ask CUE: from the header sparkle, Quick Add's chip, or a note (with its question).
+  const [asking, setAsking] = useState<{ query: string | null } | null>(null);
+  const openDraft = (d: AskDraft) => {
+    setAsking(null);
+    if (d.type === 'lend' || d.type === 'borrow') {
+      shared.openLend(d.type === 'lend' ? 'lent' : 'borrowed', {
+        person: d.person, amountPaise: d.amount_paise, accountId: d.account_id, occurredOn: d.occurred_on,
+      });
+      return;
+    }
+    flows.openDraft(draftTxn(d));
+  };
   // Quick Add, a transaction's detail, Update balance and the Undo toast.
   const flows = useTxnFlows({
     accounts,
@@ -116,6 +132,7 @@ export function TodayScreen() {
     onLendBorrow: (direction) => shared.openLend(direction),
     onGroupExpense: () => shared.openGroupExpense(null),
     onSettlement: () => shared.openSettlement(null),
+    onAsk: () => setAsking({ query: null }),
     onSubscription: () => dueFlows.openAdd(),
     onGoalJar: () => jarFlows.openMove('add'),
   });
@@ -171,6 +188,7 @@ export function TodayScreen() {
           onWeeksBack={changeWeek}
           onSearch={() => router.push('/transactions?search=1')}
           dueDates={dueDates}
+          onAsk={() => setAsking({ query: null })}
         />
         {isToday ? null : <PastDateBanner selected={selected} onBack={backToToday} />}
 
@@ -220,7 +238,11 @@ export function TodayScreen() {
         </View>
 
         {/* 4. A note from CUE (moved up, decided 16 Nov) */}
-        <NoteCard />
+        <NoteCard
+          query={note}
+          onInsights={(n) => router.push(insightsRoute(n) as Href)}
+          onAsk={(n) => setAsking({ query: n ? askAbout(n) : null })}
+        />
 
         {/* 5. Your accounts */}
         <View onLayout={(e) => (accountsY.current = e.nativeEvent.layout.y)}>
@@ -267,6 +289,7 @@ export function TodayScreen() {
             isToday={isToday}
             accounts={accounts}
             onOpen={flows.openTxn}
+            onLongPress={flows.fixCategory}
             onAdd={() => openQuick(null)}
             onViewAll={() => router.push('/transactions')}
           />
@@ -310,6 +333,7 @@ export function TodayScreen() {
       {dueFlows.elements}
       {jarFlows.elements}
       {shared.elements}
+      <AskSheet visible={asking !== null} initialQuery={asking?.query ?? null} onClose={() => setAsking(null)} onDraft={openDraft} />
     </View>
   );
 }

@@ -4,7 +4,7 @@ import { PanResponder, Text, TouchableOpacity, View } from 'react-native';
 
 import { COLORS, FONT, HEADING_FONT, ROLES, useDashboardTheme } from '@/features/money/palette';
 import { useAuthStore } from '@/features/auth/store';
-import { CalendarIcon } from '../components/icons';
+import { CalendarIcon, SparkleIcon } from '../components/icons';
 import { greeting, monthRange, toISODate, weekDays, weekStartBack } from '../dates';
 import { useTransactions } from '../hooks';
 import { Sheet } from '../sheets/Sheet';
@@ -36,6 +36,7 @@ export function TodayHeader({
   onWeeksBack,
   onSearch,
   dueDates,
+  onAsk,
 }: {
   today: Date;
   selected: string;
@@ -47,6 +48,8 @@ export function TodayHeader({
   onSearch: () => void;
   /** Days with a payment due, dotted on future days. */
   dueDates?: Set<string>;
+  /** Ask CUE: the sparkle beside the avatar (spec suggestion 4). */
+  onAsk?: () => void;
 }) {
   const router = useRouter();
   const theme = useDashboardTheme();
@@ -84,6 +87,16 @@ export function TodayHeader({
             {helloLine(fullName)}
           </Text>
         </View>
+        {onAsk ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Ask CUE"
+            onPress={onAsk}
+            hitSlop={6}
+            style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+            <SparkleIcon color={theme.accentText} size={22} />
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel={fullName ? `Your profile, ${fullName}` : 'Your profile'}

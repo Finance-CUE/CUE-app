@@ -3,11 +3,12 @@ import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { newClientKey } from '../accounts';
-import { ClockIcon, InIcon, KhataIcon, OutIcon, RupeeIcon, SavingsIcon, SwapIcon } from '../components/icons';
+import { ClockIcon, InIcon, KhataIcon, OutIcon, RupeeIcon, SavingsIcon, SparkleIcon, SwapIcon } from '../components/icons';
 import { ChipRow, PrimaryButton, TextField } from '../components/ui';
 import { daysBefore, parseDisplayDate, toDisplayDate, toISODate } from '../dates';
 import { formatRupees as plainRupees, paiseToInput, parseRupeesToPaise } from '../format';
-import { useAddScheduled, useAddTransaction, useTransactions, useUpdateTransaction } from '../hooks';
+import { useAddScheduled, useAddTransaction, useMerchantCategories, useTransactions, useUpdateTransaction } from '../hooks';
+import { learnedCategory } from '../insights/merchant';
 import { useRupees } from '../privacy';
 import type { Account, LedgerTxn } from '../types';
 import { FieldError, FormError, Sheet, useGuardedSubmit } from '../sheets/Sheet';
@@ -42,7 +43,9 @@ export type Saved = {
   /** A future date: saved as a scheduled payment due then, not as an entry. */
   scheduledFor?: string;
 };
-export type Seed = { mode: 'edit' | 'duplicate'; txn: LedgerTxn };
+/** edit: change an entry. duplicate: a new one like it, dated today's selection. draft: Ask CUE's
+ * filled form, keeping its date; nothing is saved until Save. */
+export type Seed = { mode: 'edit' | 'duplicate' | 'draft'; txn: LedgerTxn };
 
 const TITLES: Record<EntryKind, string> = { expense: 'Expense', income: 'Income', transfer: 'Transfer' };
 const SAVE_ERROR = 'Not saved. Check your connection and try again.';
@@ -72,6 +75,7 @@ export function QuickAddSheet({
   onLendBorrow,
   onGroupExpense,
   onSettlement,
+  onAsk,
   onSubscription,
   onGoalJar,
 }: {
@@ -91,6 +95,8 @@ export function QuickAddSheet({
   /** P3: Group Expense and Settlement tiles; hidden when not given. */
   onGroupExpense?: () => void;
   onSettlement?: () => void;
+  /** The Ask CUE chip under the grid (spec Quick Add secondary row). */
+  onAsk?: () => void;
   onSubscription: () => void;
   /** The Goal Jar tile (P2); hidden when not given. */
   onGoalJar?: () => void;
@@ -125,6 +131,7 @@ export function QuickAddSheet({
   const today = new Date();
   const todayISO = toISODate(today);
   const history = useTransactions(daysBefore(today, 365), todayISO, visible).data ?? [];
+  const rules = useMerchantCategories(visible).data ?? [];
   const open = useMemo(() => accounts.filter((a) => !a.archived), [accounts]);
 
   // Seed the form each time the sheet opens, never while the user is typing.
@@ -138,7 +145,7 @@ export function QuickAddSheet({
     setPickedAccount(from?.account_id ?? presetAccountId ?? null);
     setPickedTo(from?.to_account_id ?? null);
     // Editing keeps the entry's date; a duplicate is new, so it takes Today's selected date.
-    const wanted = seed?.mode === 'edit' && from ? from.occurred_on : defaultDate;
+    const wanted = (seed?.mode === 'edit' || seed?.mode === 'draft') && from ? from.occurred_on : defaultDate;
     // A future date selected on Today stays: the entry becomes a scheduled payment.
     const start = wanted > todayISO && (seed?.mode === 'edit' || initial === 'transfer') ? todayISO : wanted;
     setDateChoice(start === todayISO ? 'today' : start === daysBefore(new Date(), 1) ? 'yesterday' : 'other');
@@ -157,8 +164,10 @@ export function QuickAddSheet({
   const defaults = kind && kind !== 'transfer' ? smartDefaults(history, kind, description) : null;
   const suggested =
     kind === 'expense' ? suggestExpenseCategory(description) : kind === 'income' ? suggestIncomeCategory(description) : null;
-  // A manual pick wins; then a past entry with the same description; then the keyword suggestion.
-  const category = pickedCategory ?? defaults?.category ?? suggested;
+  // A manual pick wins; then "Always put Zepto in Groceries" (suggestion 18); then a past
+  // entry with the same description; then the keyword suggestion.
+  const learned = kind === 'expense' || kind === 'income' ? learnedCategory(rules, description, kind) : null;
+  const category = pickedCategory ?? learned ?? defaults?.category ?? suggested;
   const openIds = new Set(open.map((a) => a.id));
   const fromDefault = defaults?.accountId && openIds.has(defaults.accountId) ? defaults.accountId : null;
   const accountId = (pickedAccount && openIds.has(pickedAccount) ? pickedAccount : null) ??
@@ -270,6 +279,15 @@ export function QuickAddSheet({
           {onGroupExpense ? <Tile label="Group Expense" icon={<KhataIcon color={theme.accentText} />} onPress={onGroupExpense} /> : null}
           {onSettlement ? <Tile label="Settlement" icon={<SwapIcon color={theme.accentText} />} onPress={onSettlement} /> : null}
         </View>
+        {onAsk ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={onAsk}
+            style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: theme.tint }}>
+            <SparkleIcon color={theme.accentText} size={16} />
+            <Text style={{ fontFamily: FONT.semibold, fontSize: 13, color: theme.accentText }}>Ask CUE</Text>
+          </TouchableOpacity>
+        ) : null}
         {open.length === 0 ? (
           <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>Add an account on Today first, so CUE knows where the money is.</Text>
         ) : null}

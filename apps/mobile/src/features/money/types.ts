@@ -473,3 +473,31 @@ export type GroupSettlementInput = {
   note?: string | null;
   account_id?: string | null;
 };
+
+// P4: intelligence (spec 3, 4.9, 4.10) -------------------------------------------------
+
+export type NoteKind = 'due_soon' | 'pending' | 'category_up' | 'jar_milestone' | 'streak';
+/** Numbers only: the app writes the words, so hidden amounts stay hidden. */
+export type Note = { key: string; kind: NoteKind; params: Record<string, any>; details: Record<string, any> };
+export type NoteResponse = { getting_to_know: boolean; note: Note | null };
+
+/** Ask CUE. Amounts in text and lines are {{₹<paise>}} tokens. A draft is never saved by itself. */
+export type AskDraft = {
+  type: 'expense' | 'income' | 'transfer' | 'lend' | 'borrow';
+  amount_paise: number;
+  category?: string;
+  description?: string | null;
+  account_id?: string | null;
+  to_account_id?: string | null;
+  person?: string;
+  occurred_on: string;
+};
+export type AskReply = {
+  kind: 'answer' | 'draft' | 'help';
+  text: string;
+  lines: string[];
+  draft: AskDraft | null;
+  suggestions: string[];
+};
+
+export type MerchantCategory = { merchant: string; kind: 'expense' | 'income'; category: string };

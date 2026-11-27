@@ -1,6 +1,6 @@
 import { Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
+import { COLORS, FONT, POSITIVE_INK, useDashboardTheme } from '@/features/money/palette';
 import { CategoryIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { useGroups } from '../hooks';
 import { useRupees } from '../privacy';
@@ -18,19 +18,25 @@ const ICON_SLUG: Record<string, string> = {
   bills: 'bills',
 };
 
-/**
- * Money in. The sage token (#92A98A) is about 2.5:1 on white, below the 4.5:1
- * text needs; this darker sage is about 5.5:1. P1's brand-kit roles replace it.
- */
-const POSITIVE_INK = '#56704D';
-
 /** One transaction row, as the spec's "Row by type" table shows it. */
-export function TxnRow({ txn, accounts, onPress }: { txn: LedgerTxn; accounts: Map<string, Account>; onPress: () => void }) {
+export function TxnRow({
+  txn,
+  accounts,
+  onPress,
+  onLongPress,
+}: {
+  txn: LedgerTxn;
+  accounts: Map<string, Account>;
+  onPress: () => void;
+  /** Long-press to fix the category (suggestion 18). */
+  onLongPress?: () => void;
+}) {
   const theme = useDashboardTheme();
   const formatRupees = useRupees();
   const groups = useGroups().data?.groups;
   const names = new Map((groups ?? []).map((g) => [g.id, g.name]));
   const row = rowFor(txn, accounts, formatRupees, names);
+  const fixable = (txn.type === 'expense' || txn.type === 'income') && !txn.group_id;
   const tone: Record<Tone, string> = { ink: COLORS.text, positive: POSITIVE_INK, soft: COLORS.muted };
   const icon =
     txn.type === 'expense' || txn.type === 'refund' ? (
@@ -44,7 +50,12 @@ export function TxnRow({ txn, accounts, onPress }: { txn: LedgerTxn; accounts: M
     <TouchableOpacity
       accessibilityRole="button"
       accessibilityLabel={row.spoken}
+      accessibilityHint={onLongPress && fixable ? 'Long-press to change the category' : undefined}
+      accessibilityActions={onLongPress && fixable ? [{ name: 'longpress', label: 'Change category' }] : undefined}
+      onAccessibilityAction={(e) => (e.nativeEvent.actionName === 'longpress' ? onLongPress?.() : undefined)}
       onPress={onPress}
+      onLongPress={onLongPress && fixable ? onLongPress : undefined}
+      delayLongPress={350}
       activeOpacity={0.7}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56 }}>
       <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: theme.tint, alignItems: 'center', justifyContent: 'center' }}>

@@ -140,7 +140,7 @@ function IncomeBody() {
         ) : (
           <View>
             {income.map((t) => (
-              <TxnRow key={t.id} txn={t} accounts={byId} onPress={() => flows.openTxn(t)} />
+              <TxnRow key={t.id} txn={t} accounts={byId} onPress={() => flows.openTxn(t)} onLongPress={() => flows.fixCategory(t)} />
             ))}
           </View>
         )}

@@ -20,6 +20,7 @@ export function TodayTransactions({
   isToday,
   accounts,
   onOpen,
+  onLongPress,
   onAdd,
   onViewAll,
 }: {
@@ -27,6 +28,7 @@ export function TodayTransactions({
   isToday: boolean;
   accounts: Account[];
   onOpen: (t: LedgerTxn) => void;
+  onLongPress?: (t: LedgerTxn) => void;
   onAdd: () => void;
   onViewAll: () => void;
 }) {
@@ -60,7 +62,7 @@ export function TodayTransactions({
       ) : (
         <View>
           {rows.map((t) => (
-            <TxnRow key={t.id} txn={t} accounts={byId} onPress={() => onOpen(t)} />
+            <TxnRow key={t.id} txn={t} accounts={byId} onPress={() => onOpen(t)} onLongPress={onLongPress ? () => onLongPress(t) : undefined} />
           ))}
         </View>
       )}

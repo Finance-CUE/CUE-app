@@ -173,7 +173,7 @@ function HistoryBody() {
             </View>
             <View style={{ backgroundColor: COLORS.card, borderColor: COLORS.cardBorder, borderWidth: 1, borderRadius: 18, paddingHorizontal: 14 }}>
               {g.items.map((t) => (
-                <TxnRow key={t.id} txn={t} accounts={byId} onPress={() => flows.openTxn(t)} />
+                <TxnRow key={t.id} txn={t} accounts={byId} onPress={() => flows.openTxn(t)} onLongPress={() => flows.fixCategory(t)} />
               ))}
             </View>
           </View>

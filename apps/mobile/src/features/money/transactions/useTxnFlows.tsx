@@ -12,6 +12,7 @@ import { categoryName, savedLabel, scheduledLabel } from '../quickAdd/model';
 import { type QuickAddChoice, QuickAddSheet, type Saved, type Seed } from '../quickAdd/QuickAddSheet';
 import { FormError, Sheet } from '../sheets/Sheet';
 import { UpdateBalanceSheet } from '../sheets/UpdateBalanceSheet';
+import { CategoryFixSheet } from '../insights/CategoryFixSheet';
 import type { Account, LedgerTxn } from '../types';
 import { canDuplicate, deleteQuestion, isDeletable, isEditable, rowFor } from './model';
 
@@ -19,6 +20,7 @@ type Open =
   | { name: 'quick'; kind: QuickAddChoice; account: string | null; seed: Seed | null }
   | { name: 'detail'; txn: LedgerTxn }
   | { name: 'balance'; account: string | null; reconcile: boolean }
+  | { name: 'category'; txn: LedgerTxn }
   | null;
 
 /**
@@ -32,6 +34,7 @@ export function useTxnFlows({
   onLendBorrow,
   onGroupExpense,
   onSettlement,
+  onAsk,
   onSubscription = () => {},
   onGoalJar,
 }: {
@@ -40,6 +43,7 @@ export function useTxnFlows({
   onLendBorrow?: (direction: 'lent' | 'borrowed') => void;
   onGroupExpense?: () => void;
   onSettlement?: () => void;
+  onAsk?: () => void;
   onSubscription?: () => void;
   onGoalJar?: () => void;
 }) {
@@ -136,6 +140,14 @@ export function useTxnFlows({
               }
             : undefined
         }
+        onAsk={
+          onAsk
+            ? () => {
+                close();
+                onAsk();
+              }
+            : undefined
+        }
         onSettlement={
           onSettlement
             ? () => {
@@ -175,10 +187,19 @@ export function useTxnFlows({
         reconcile={open?.name === 'balance' && open.reconcile}
         onAddExpense={() => openQuick('expense', open?.name === 'balance' ? open.account : null)}
       />
+      <CategoryFixSheet
+        txn={open?.name === 'category' ? open.txn : null}
+        onClose={close}
+        onDone={(text) => setToast({ id: `category:${Date.now()}`, text })}
+      />
       <Toast toast={toast} onDone={clearToast} />
     </>
   );
-  return { openQuick, openTxn, openBalance, anyOpen: open !== null, elements };
+  /** Long-press a row: change its category, and maybe remember it for the merchant. */
+  const fixCategory = (txn: LedgerTxn) => setOpen({ name: 'category', txn });
+  /** Ask CUE's filled form: Quick Add opens with it, waiting for Save. */
+  const openDraft = (txn: LedgerTxn) => setOpen({ name: 'quick', kind: null, account: null, seed: { mode: 'draft', txn } });
+  return { openQuick, openTxn, openBalance, openDraft, fixCategory, anyOpen: open !== null, elements };
 }
 
 /** Spec 4.9: complete details, then Edit, Duplicate and Delete. */

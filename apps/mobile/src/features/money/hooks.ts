@@ -89,6 +89,12 @@ export const useNetWorthHistory = (today: string, days: number) =>
     placeholderData: (prev) => prev,
   });
 
+export const useNote = (today: string) =>
+  useQuery({ queryKey: ['money', 'note', today], queryFn: () => moneyApi.fetchNote(today) });
+
+export const useMerchantCategories = (enabled = true) =>
+  useQuery({ queryKey: ['money', 'merchant-categories'], queryFn: moneyApi.fetchMerchantCategories, enabled });
+
 export const useGroups = (enabled = true) =>
   useQuery({ queryKey: ['money', 'groups'], queryFn: moneyApi.fetchGroups, enabled });
 
@@ -155,6 +161,9 @@ export const useUpdateTransaction = () => useMoneyMutation(moneyApi.updateTransa
 export const useRestoreTransaction = () => useMoneyMutation(moneyApi.restoreTransaction);
 export const useSettleKhata = () => useMoneyMutation(moneyApi.settleKhata);
 export const useDeleteKhata = () => useMoneyMutation(moneyApi.deleteKhata);
+export const useDismissNote = () => useMoneyMutation(moneyApi.dismissNote);
+export const useFixCategory = () => useMoneyMutation(moneyApi.fixCategory);
+export const useAskCue = () => useMutation({ mutationFn: moneyApi.askCue, retry: 0 });
 export const useSettlePerson = () => useMoneyMutation(moneyApi.settlePerson);
 export const useCreateGroup = () => useMoneyMutation(moneyApi.createGroup);
 export const useUpdateGroup = () => useMoneyMutation(moneyApi.updateGroup);

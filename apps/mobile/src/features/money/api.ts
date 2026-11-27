@@ -389,3 +389,27 @@ export async function addGroupSettlement({
 }: GroupSettlementInput & { groupId: string; today: string }): Promise<GroupSettlement> {
   return (await api.post<GroupSettlement>(`/money/groups/${groupId}/settlements`, input, { params: { today } })).data;
 }
+
+// P4: intelligence --------------------------------------------------------------------------
+
+export async function fetchNote(today: string): Promise<import('./types').NoteResponse> {
+  return (await api.get('/money/note', { params: { today } })).data;
+}
+
+export async function dismissNote({ key, today }: { key: string; today: string }): Promise<void> {
+  await api.post('/money/note/dismiss', { key }, { params: { today } });
+}
+
+/** Ask CUE: an answer from your own data, or a filled form to check. Never saves. */
+export async function askCue({ query, today }: { query: string; today: string }): Promise<import('./types').AskReply> {
+  return (await api.post('/money/ask', { query }, { params: { today } })).data;
+}
+
+export async function fetchMerchantCategories(): Promise<import('./types').MerchantCategory[]> {
+  return (await api.get('/money/merchant-categories')).data;
+}
+
+/** Long-press fix (suggestion 18); remember applies it to the merchant from now on. */
+export async function fixCategory({ id, category, remember }: { id: string; category: string; remember: boolean }): Promise<LedgerTxn> {
+  return (await api.post<LedgerTxn>(`/money/transactions/${id}/category`, { category, remember })).data;
+}

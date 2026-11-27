@@ -33,10 +33,13 @@ export function KhataSheet({
   visible,
   onClose,
   initialDirection = 'lent',
+  prefill = null,
 }: {
   visible: boolean;
   onClose: () => void;
   initialDirection?: Direction;
+  /** Ask CUE's filled form: person, amount, account and date to check before saving. */
+  prefill?: { person?: string; amountPaise?: number; accountId?: string | null; occurredOn?: string } | null;
 }) {
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [when, setWhen] = useState<When>('today');
@@ -44,7 +47,18 @@ export function KhataSheet({
   const [dueText, setDueText] = useState('');
   const [more, setMore] = useState(false);
   useEffect(() => {
-    if (visible) setDirection(initialDirection);
+    if (!visible) return;
+    setDirection(initialDirection);
+    if (prefill) {
+      if (prefill.person) setPerson(prefill.person);
+      if (prefill.amountPaise) setAmount(String(prefill.amountPaise / 100));
+      if (prefill.accountId) setPicked(prefill.accountId);
+      if (prefill.occurredOn && prefill.occurredOn !== toISODate(new Date())) {
+        setWhen('other');
+        setOtherDate(toDisplayDate(prefill.occurredOn));
+      }
+    }
+    // Only when the sheet opens.
   }, [visible, initialDirection]);
   const [person, setPerson] = useState('');
   const [amount, setAmount] = useState('');

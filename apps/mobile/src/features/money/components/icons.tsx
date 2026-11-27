@@ -176,3 +176,10 @@ export function ScheduleIcon({ kind, color, size }: { kind: string; color: strin
   if (kind === 'income') return <InIcon color={color} size={size} />;
   return <CategoryIcon category={kind === 'subscription' ? 'subscription' : kind === 'bill' ? 'bills' : 'other'} color={color} size={size} />;
 }
+
+/** Ask CUE (spec section 3): a sparkle in the header, Quick Add and the note. */
+export const SparkleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <Path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
+  </Icon>
+);

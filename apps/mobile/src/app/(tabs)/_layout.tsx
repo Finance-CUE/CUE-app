@@ -1,7 +1,7 @@
 import { type Href, Redirect, router, Tabs } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
-import { AppState } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, AppState } from 'react-native';
 
 import { useAssessmentGate } from '@/features/assessment/hooks';
 import { applyArchetype, COLORS } from '@/features/money/palette';
@@ -22,6 +22,15 @@ export default function TabsLayout() {
   // renders; the Tabs below remount when the archetype changes (a retake).
   const slug = useArchetypeTheme().slug;
   applyArchetype(slug);
+  // A retake that changes the archetype cross-fades the new colours in over 0.4s (spec section 2).
+  const fade = useRef(new Animated.Value(1)).current;
+  const lastSlug = useRef(slug);
+  useEffect(() => {
+    if (lastSlug.current === slug) return;
+    lastSlug.current = slug;
+    fade.setValue(0);
+    Animated.timing(fade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+  }, [slug, fade]);
 
   // Refetch on resume so the 7-day schedule keeps rolling forward and dues that
   // came due surface without a cold start (Coming up's "Check"). Scoped to these;
@@ -73,6 +82,7 @@ export default function TabsLayout() {
   }
 
   return (
+    <Animated.View style={{ flex: 1, opacity: fade }}>
     <Tabs
       key={slug ?? 'base'}
       tabBar={(props) => <TabBar {...props} />}
@@ -82,5 +92,6 @@ export default function TabsLayout() {
       <Tabs.Screen name="khata" options={{ title: 'Khata' }} />
       <Tabs.Screen name="you" options={{ title: 'You' }} />
     </Tabs>
+    </Animated.View>
   );
 }
