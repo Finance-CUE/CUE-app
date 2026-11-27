@@ -28,6 +28,11 @@ import type {
   Position,
   Schedule,
   ScheduleInput,
+  Jar,
+  JarDetail,
+  JarInput,
+  JarMove,
+  Jars,
 } from '@/features/money/types';
 
 export async function fetchSpends(start: string, end: string): Promise<Spend[]> {
@@ -229,4 +234,76 @@ export async function fetchNetWorthHistory(today: string, days: number): Promise
 /** "Your position on <date>". */
 export async function fetchPosition(on: string): Promise<Position> {
   return (await api.get<Position>('/money/position', { params: { on } })).data;
+}
+
+// P2: Goal Jars ---------------------------------------------------------------------
+
+export async function fetchJars(today: string): Promise<Jars> {
+  return (await api.get<Jars>('/money/jars', { params: { today } })).data;
+}
+
+export async function fetchJar(id: string, today: string): Promise<JarDetail> {
+  return (await api.get<JarDetail>(`/money/jars/${id}`, { params: { today } })).data;
+}
+
+/** Create jar with an optional first contribution. A retry returns the jar already made. */
+export async function createJar({
+  today,
+  ...input
+}: JarInput & { client_key: string; initial_paise: number; today: string }): Promise<Jar> {
+  return (await api.post<Jar>('/money/jars', input, { params: { today } })).data;
+}
+
+export async function updateJar({ id, today, ...input }: JarInput & { id: string; today: string }): Promise<Jar> {
+  return (await api.patch<Jar>(`/money/jars/${id}`, input, { params: { today } })).data;
+}
+
+/** Add money or Withdraw: only the allocation moves. */
+export async function moveJar({
+  id,
+  action,
+  today,
+  ...input
+}: {
+  id: string;
+  action: 'add' | 'withdraw';
+  today: string;
+  client_key: string;
+  amount_paise: number;
+  occurred_on: string;
+  note?: string | null;
+}): Promise<JarMove> {
+  return (await api.post<JarMove>(`/money/jars/${id}/${action}`, input, { params: { today } })).data;
+}
+
+/** Undo an add or withdrawal. */
+export async function undoJarMove({ id, today }: { id: string; today: string }): Promise<JarMove> {
+  return (await api.delete<JarMove>(`/money/jars/moves/${id}`, { params: { today } })).data;
+}
+
+export async function answerContribution({
+  id,
+  today,
+  ...input
+}: {
+  id: string;
+  today: string;
+  client_key: string;
+  due_on: string;
+  approve: boolean;
+}): Promise<void> {
+  await api.post(`/money/jars/${id}/contribution`, input, { params: { today } });
+}
+
+/** Pause, Resume, Complete, Archive, or "the celebration was shown". */
+export async function jarAction({
+  id,
+  action,
+  today,
+}: {
+  id: string;
+  action: 'pause' | 'resume' | 'complete' | 'archive' | 'celebrated';
+  today: string;
+}): Promise<void> {
+  await api.post(`/money/jars/${id}/${action}`, undefined, { params: { today } });
 }

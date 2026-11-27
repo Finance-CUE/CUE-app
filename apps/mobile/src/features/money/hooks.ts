@@ -89,6 +89,12 @@ export const useNetWorthHistory = (today: string, days: number) =>
     placeholderData: (prev) => prev,
   });
 
+export const useJars = (today: string) =>
+  useQuery({ queryKey: ['money', 'jars', today], queryFn: () => moneyApi.fetchJars(today) });
+
+export const useJar = (id: string, today: string) =>
+  useQuery({ queryKey: ['money', 'jar', id, today], queryFn: () => moneyApi.fetchJar(id, today) });
+
 export const usePosition = (on: string | null) =>
   useQuery({
     queryKey: ['money', 'position', on],
@@ -143,6 +149,12 @@ export const useUpdateTransaction = () => useMoneyMutation(moneyApi.updateTransa
 export const useRestoreTransaction = () => useMoneyMutation(moneyApi.restoreTransaction);
 export const useSettleKhata = () => useMoneyMutation(moneyApi.settleKhata);
 export const useDeleteKhata = () => useMoneyMutation(moneyApi.deleteKhata);
+export const useCreateJar = () => useMoneyMutation(moneyApi.createJar);
+export const useUpdateJar = () => useMoneyMutation(moneyApi.updateJar);
+export const useMoveJar = () => useMoneyMutation(moneyApi.moveJar);
+export const useUndoJarMove = () => useMoneyMutation(moneyApi.undoJarMove);
+export const useAnswerContribution = () => useMoneyMutation(moneyApi.answerContribution);
+export const useJarAction = () => useMoneyMutation(moneyApi.jarAction);
 export const useAddScheduled = () => useMoneyMutation(moneyApi.addScheduled);
 export const useUpdateScheduled = () => useMoneyMutation(moneyApi.updateScheduled);
 export const useCancelScheduled = () => useMoneyMutation(moneyApi.cancelScheduled);

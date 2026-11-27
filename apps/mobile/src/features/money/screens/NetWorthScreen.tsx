@@ -156,7 +156,7 @@ function NetWorthBody() {
                   Net worth = Total assets − Total liabilities
                 </Text>
                 <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>
-                  Moving money between your own accounts doesn't change net worth. Investments will be added later.
+                  Moving money between your own accounts, or into and out of Goal Jars, doesn't change net worth. Investments will be added later.
                 </Text>
               </View>
             </>

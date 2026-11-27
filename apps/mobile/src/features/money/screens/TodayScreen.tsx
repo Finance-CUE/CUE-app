@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { type Href, useRouter } from 'expo-router';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -17,7 +17,8 @@ import { COLORS, FONT, HEADING_FONT, SHAPE, useDashboardTheme } from '@/features
 import { PlusIcon, RupeeIcon, SwapIcon } from '../components/icons';
 import { Fab } from '../components/ui';
 import { toISODate, weekDays, weekStartBack } from '../dates';
-import { useDues, useMonth, useNetWorth, useNetWorthHistory, useToday } from '../hooks';
+import { useDues, useJars, useMonth, useNetWorth, useNetWorthHistory, useToday } from '../hooks';
+import { useJarFlows } from '../jars/useJarFlows';
 import { leftToSpendLine } from '../month/model';
 import { useRupees } from '../privacy';
 import { useDueFlows } from '../scheduled/useDueFlows';
@@ -25,6 +26,7 @@ import { AddAccountSheet } from '../sheets/AddAccountSheet';
 import { KhataSheet } from '../sheets/KhataSheet';
 import { AccountsCard } from '../today/AccountsCard';
 import { CashFlowCard } from '../today/CashFlowCard';
+import { GoalJarsCard } from '../today/GoalJarsCard';
 import { ComingUpCard } from '../today/ComingUpCard';
 import { helloLine, shortDay } from '../today/model';
 import { NetWorthCard } from '../today/NetWorthCard';
@@ -49,7 +51,7 @@ const plusDays = (iso: string, n: number) => {
  * Today (spec section 3): one scroll of blocks in the blueprint's order.
  *  1 Header and date strip · 2 Net worth (with the shortcut row) · 3 This month
  *  4 A note from CUE · 5 Your accounts · 6 Where your money moves
- *  7 My Goal Jars (P2) · 8 Coming up · 9 Today's transactions
+ *  7 My Goal Jars · 8 Coming up · 9 Today's transactions
  * The selected date changes daily activity only; balances always show today.
  */
 export function TodayScreen() {
@@ -94,6 +96,17 @@ export function TodayScreen() {
     [dues.data],
   );
 
+  const jars = useJars(todayISO);
+  const jarFlows = useJarFlows({ accounts, jars: jars.data?.jars ?? [] });
+  // The one-time "Reached" celebration, for a jar that hit its target since last time.
+  const celebrated = useRef(new Set<string>());
+  useEffect(() => {
+    const reached = (jars.data?.jars ?? []).find((j) => j.state === 'complete' && !j.celebrated && !celebrated.current.has(j.id));
+    if (reached) {
+      celebrated.current.add(reached.id);
+      jarFlows.celebrate(reached);
+    }
+  }, [jars.data, jarFlows]);
   const dueFlows = useDueFlows({ accounts });
   // Quick Add, a transaction's detail, Update balance and the Undo toast.
   const flows = useTxnFlows({
@@ -101,6 +114,7 @@ export function TodayScreen() {
     defaultDate: selected,
     onLendBorrow: () => setSheet('khata'),
     onSubscription: () => dueFlows.openAdd(),
+    onGoalJar: () => jarFlows.openMove('add'),
   });
   const openQuick = flows.openQuick;
 
@@ -221,7 +235,13 @@ export function TodayScreen() {
           onView={(b) => router.push(`/transactions?start=${b.start}&end=${b.end}` as Href)}
         />
 
-        {/* 7. My Goal Jars arrive in P2. */}
+        {/* 7. My Goal Jars */}
+        <GoalJarsCard
+          query={jars}
+          onOpen={(j) => router.push(`/jar/${j.id}` as Href)}
+          onCreate={jarFlows.openCreate}
+          onViewAll={() => router.push('/jars' as Href)}
+        />
 
         {/* 8. Coming up */}
         <ComingUpCard
@@ -286,6 +306,7 @@ export function TodayScreen() {
       <AddAccountSheet visible={sheet === 'addAccount'} onClose={close} />
       {flows.elements}
       {dueFlows.elements}
+      {jarFlows.elements}
     </View>
   );
 }

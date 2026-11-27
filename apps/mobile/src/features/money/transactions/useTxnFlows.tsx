@@ -30,11 +30,13 @@ export function useTxnFlows({
   defaultDate,
   onLendBorrow = () => {},
   onSubscription = () => {},
+  onGoalJar,
 }: {
   accounts: Account[];
   defaultDate: string;
   onLendBorrow?: () => void;
   onSubscription?: () => void;
+  onGoalJar?: () => void;
 }) {
   const formatRupees = useRupees();
   const [open, setOpen] = useState<Open>(null);
@@ -110,6 +112,14 @@ export function useTxnFlows({
           close();
           onLendBorrow();
         }}
+        onGoalJar={
+          onGoalJar
+            ? () => {
+                close();
+                onGoalJar();
+              }
+            : undefined
+        }
         onSubscription={() => {
           close();
           onSubscription();

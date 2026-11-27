@@ -6,6 +6,7 @@ import { COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
 import { WalletIcon } from '../components/icons';
 import { useRupees } from '../privacy';
 import type { Account, NetWorth } from '../types';
+import { jarsMetaLine } from '../jars/model';
 import { ACCOUNTS_SHOWN, accountAmount, accountGroups, kindLabel } from './model';
 import { CardError, EmptyState, Skeleton, TodayCard } from './parts';
 
@@ -89,10 +90,12 @@ function AccountRow({ account, onPress }: { account: Account; onPress: () => voi
   const theme = useDashboardTheme();
   const formatRupees = useRupees();
   const amount = accountAmount(account, formatRupees);
+  // Suggestion 14: "₹10,000 in jars · ₹55,000 free"; the balance itself still matches the bank.
+  const jarsLine = jarsMetaLine(account, formatRupees);
   return (
     <TouchableOpacity
       accessibilityRole="button"
-      accessibilityLabel={`${account.name}, ${kindLabel(account.kind)}, ${amount}`}
+      accessibilityLabel={`${account.name}, ${kindLabel(account.kind)}, ${amount}${jarsLine ? `. ${jarsLine}` : ''}`}
       onPress={onPress}
       activeOpacity={0.7}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52 }}>
@@ -105,6 +108,7 @@ function AccountRow({ account, onPress }: { account: Account; onPress: () => voi
       <View style={{ flex: 1 }}>
         <Text style={{ fontFamily: FONT.semibold, fontSize: 13, color: COLORS.text }}>{account.name}</Text>
         <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.muted }}>{kindLabel(account.kind)}</Text>
+        {jarsLine ? <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.muted }}>{jarsLine}</Text> : null}
       </View>
       <Text style={{ fontFamily: FONT.semibold, fontSize: 14, color: COLORS.text }}>{amount}</Text>
     </TouchableOpacity>

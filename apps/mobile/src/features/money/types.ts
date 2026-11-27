@@ -180,6 +180,9 @@ export type Account = {
   /** Negative for a card with money due; null before its "Balance on" date. */
   balance_paise: number | null;
   created_at: string;
+  /** Goal Jars (suggestion 14): money set aside here, and what is left. */
+  in_jars_paise?: number;
+  free_paise?: number | null;
 };
 export type PaymentMethod = 'cash' | 'upi';
 
@@ -310,4 +313,61 @@ export type Position = {
   total_assets_paise: number;
   total_liabilities_paise: number;
   net_worth_paise: number;
+};
+
+// P2: Goal Jars (spec 4.7) ---------------------------------------------------------
+
+export type JarMethod = 'manual' | 'weekly' | 'monthly' | 'payday';
+
+export type Jar = {
+  id: string;
+  name: string;
+  icon: string;
+  target_paise: number;
+  target_date: string | null;
+  account_id: string;
+  method: JarMethod;
+  contribution_paise: number | null;
+  next_contribution_on: string | null;
+  status: 'active' | 'paused' | 'complete' | 'archived';
+  /** What the card shows. */
+  state: 'active' | 'paused' | 'complete' | 'date_passed';
+  saved_paise: number;
+  remaining_paise: number;
+  progress: number;
+  suggested_monthly_paise: number | null;
+  /** "A little behind" (suggestion 17). */
+  behind: boolean;
+  /** A suggested contribution is waiting for approval. */
+  contribution_due: boolean;
+  /** How much more this account's jars hold than the account has; 0 when fine. */
+  account_short_paise: number;
+  celebrated: boolean;
+  created_at: string;
+};
+
+export type Jars = { total_saved_paise: number; count: number; jars: Jar[] };
+
+export type JarMove = {
+  id: string;
+  jar_id: string;
+  amount_paise: number;
+  account_id: string;
+  occurred_on: string;
+  note: string | null;
+  auto: boolean;
+  created_at: string;
+  deleted: boolean;
+};
+
+export type JarDetail = { jar: Jar; moves: JarMove[] };
+
+export type JarInput = {
+  name: string;
+  icon: string;
+  target_paise: number;
+  target_date: string | null;
+  account_id: string;
+  method: JarMethod;
+  contribution_paise: number | null;
 };

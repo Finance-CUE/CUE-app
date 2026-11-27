@@ -3,7 +3,7 @@ import { Alert, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { COLORS, HEADING_FONT, FONT, useDashboardTheme } from '@/features/money/palette';
 import { newClientKey } from '../accounts';
-import { ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
+import { ClockIcon, RupeeIcon, SavingsIcon, SwapIcon } from '../components/icons';
 import { ChipRow, PrimaryButton, TextField } from '../components/ui';
 import { daysBefore, parseDisplayDate, toDisplayDate, toISODate } from '../dates';
 import { formatRupees as plainRupees, paiseToInput, parseRupeesToPaise } from '../format';
@@ -71,6 +71,7 @@ export function QuickAddSheet({
   onSaved,
   onLendBorrow,
   onSubscription,
+  onGoalJar,
 }: {
   visible: boolean;
   initial: QuickAddChoice;
@@ -85,6 +86,8 @@ export function QuickAddSheet({
   onSaved: (saved: Saved) => void;
   onLendBorrow: () => void;
   onSubscription: () => void;
+  /** The Goal Jar tile (P2); hidden when not given. */
+  onGoalJar?: () => void;
 }) {
   const formatRupees = useRupees();
   const theme = useDashboardTheme();
@@ -256,6 +259,7 @@ export function QuickAddSheet({
           <Tile label="Transfer" icon={<SwapIcon color={theme.accentText} />} onPress={() => setKind('transfer')} />
           <Tile label="Lend / Borrow" icon={<SwapIcon color={theme.accentText} />} onPress={onLendBorrow} />
           <Tile label="Subscription or bill" icon={<ClockIcon color={theme.accentText} />} onPress={onSubscription} />
+          {onGoalJar ? <Tile label="Goal Jar" icon={<SavingsIcon color={theme.accentText} />} onPress={onGoalJar} /> : null}
         </View>
         {open.length === 0 ? (
           <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>Add an account on Today first, so CUE knows where the money is.</Text>
