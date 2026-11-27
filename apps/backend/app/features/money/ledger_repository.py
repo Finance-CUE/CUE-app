@@ -8,6 +8,8 @@ repository the money and ledger routers share.
 from datetime import UTC, date, datetime
 
 from app.features.money.ledger import Account, Txn
+from app.features.money.jars import Jar
+from app.features.money.jars import Move as JarMove
 from app.features.money.schedule import Answer, Item
 from app.features.money.ledger_schemas import AccountCreate, AccountUpdate
 from app.features.money.schemas import KhataCreate, KhataEntry, SpendCreate
@@ -54,6 +56,33 @@ def to_schedule_item(row: dict) -> Item:
         category=row.get("category"),
         variable=bool(row.get("variable", False)),
         reminder=bool(row.get("reminder", True)),
+    )
+
+
+def to_jar(row: dict) -> Jar:
+    nxt = row.get("next_contribution_on")
+    target = row.get("target_date")
+    return Jar(
+        id=row["id"],
+        name=row["name"],
+        target_paise=int(row["target_paise"]),
+        target_date=date.fromisoformat(target) if target else None,
+        account_id=row["account_id"],
+        method=row.get("method") or "manual",
+        contribution_paise=int(row["contribution_paise"]) if row.get("contribution_paise") else None,
+        next_contribution_on=date.fromisoformat(nxt) if nxt else None,
+        status=row.get("status") or "active",
+        created_on=datetime.fromisoformat(row["created_at"]).date(),
+    )
+
+
+def to_jar_move(row: dict) -> JarMove:
+    return JarMove(
+        id=row["id"],
+        jar_id=row["jar_id"],
+        amount_paise=int(row["amount_paise"]),
+        account_id=row["account_id"],
+        occurred_on=date.fromisoformat(row["occurred_on"]),
     )
 
 
@@ -381,6 +410,86 @@ class LedgerRepository(MoneyRepository):
             prefer=_REP,
         )
         return bool(rows)
+
+    # Goal Jars (sql/013) ------------------------------------------------------------
+
+    async def list_jars(self, user_id: str) -> list[dict]:
+        """Every jar, archived ones included (their history stays)."""
+        return await self._list("goal_jars", user_id, "created_at.asc")
+
+    async def create_jar(self, user_id: str, body: dict) -> tuple[dict, bool]:
+        """(row, created). A repeat client key returns the jar it already made."""
+        try:
+            return await self._insert("goal_jars", user_id, body), True
+        except MoneyConflictError:
+            rows = await self._request(
+                "GET",
+                "goal_jars",
+                params={
+                    "user_id": f"eq.{_uid(user_id)}",
+                    "client_key": f"eq.{_uid(body['client_key'])}",
+                    "select": "*",
+                },
+            )
+            if not rows:
+                raise
+            return rows[0], False
+
+    async def update_jar(self, user_id: str, jar_id: str, body: dict) -> dict | None:
+        """Any jar not archived; None when missing, archived or not the user's."""
+        rows = await self._request(
+            "PATCH",
+            "goal_jars",
+            params={"id": f"eq.{_uid(jar_id)}", "user_id": f"eq.{_uid(user_id)}", "status": "neq.archived"},
+            json={**body, "updated_at": datetime.now(UTC).isoformat()},
+            prefer=_REP,
+        )
+        return rows[0] if rows else None
+
+    async def list_jar_moves(self, user_id: str, include_deleted: bool = False) -> list[dict]:
+        extra = {} if include_deleted else {"deleted_at": "is.null"}
+        return await self._list("jar_moves", user_id, "occurred_on.desc,created_at.desc", **extra)
+
+    async def add_jar_move(self, user_id: str, body: dict) -> tuple[dict, bool]:
+        """(row, created). A repeat client key returns the move it already made."""
+        try:
+            return await self._insert("jar_moves", user_id, body), True
+        except MoneyConflictError:
+            rows = await self._request(
+                "GET",
+                "jar_moves",
+                params={
+                    "user_id": f"eq.{_uid(user_id)}",
+                    "client_key": f"eq.{_uid(body['client_key'])}",
+                    "select": "*",
+                },
+            )
+            if not rows:
+                raise
+            return rows[0], False
+
+    async def get_jar_move(self, user_id: str, move_id: str) -> dict | None:
+        rows = await self._request(
+            "GET",
+            "jar_moves",
+            params={"id": f"eq.{_uid(move_id)}", "user_id": f"eq.{_uid(user_id)}", "select": "*"},
+        )
+        return rows[0] if rows else None
+
+    async def set_jar_move_deleted(self, user_id: str, move_id: str, deleted: bool) -> dict | None:
+        """Undo an add or withdrawal (deleted=True), or bring it back. None when nothing changed."""
+        rows = await self._request(
+            "PATCH",
+            "jar_moves",
+            params={
+                "id": f"eq.{_uid(move_id)}",
+                "user_id": f"eq.{_uid(user_id)}",
+                "deleted_at": "is.null" if deleted else "not.is.null",
+            },
+            json={"deleted_at": datetime.now(UTC).isoformat() if deleted else None},
+            prefer=_REP,
+        )
+        return rows[0] if rows else None
 
     async def _rpc(self, name: str, args: dict) -> dict | None:
         row = await self._request("POST", f"rpc/{name}", json=args)

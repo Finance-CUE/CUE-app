@@ -13,9 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 
 from app.features.assessment.router import UserId
 from app.features.auth.router import limiter
+from app.features.money import jars as jars_logic
 from app.features.money import ledger
 from app.features.money.ledger_repository import (
     LedgerRepository,
+    to_jar_move,
     to_ledger_account,
     to_ledger_txn,
 )
@@ -68,7 +70,8 @@ def _txn_out(row: dict) -> TransactionOut:
     return TransactionOut(**fields, deleted=row.get("deleted_at") is not None)
 
 
-def _account_out(row: dict, balance: int | None) -> AccountOut:
+def _account_out(row: dict, balance: int | None, jars: dict[str, int] | None = None) -> AccountOut:
+    in_jars = (jars or {}).get(row["id"], 0)
     return AccountOut(
         id=row["id"],
         name=row["name"],
@@ -78,7 +81,14 @@ def _account_out(row: dict, balance: int | None) -> AccountOut:
         archived=row.get("archived_at") is not None,
         balance_paise=balance,
         created_at=row["created_at"],
+        in_jars_paise=in_jars,
+        free_paise=jars_logic.free_balance(balance, in_jars),
     )
+
+
+async def _jar_money(repo: LedgerRepository, user_id: str) -> dict[str, int]:
+    """Money in Goal Jars per account (suggestion 14)."""
+    return jars_logic.in_jars_by_account(to_jar_move(r) for r in await repo.list_jar_moves(user_id))
 
 
 def _sorted_accounts(accounts: list[AccountOut]) -> list[AccountOut]:
@@ -188,8 +198,9 @@ async def list_accounts(request: Request, today: Today, user_id: UserId, repo: R
     """Open accounts with today's balance, in the order Today shows them."""
     rows, txns = await _load(repo, user_id)
     balances = ledger.account_balances_on([to_ledger_account(r) for r in rows], txns, today)
+    jars = await _jar_money(repo, user_id)
     return _sorted_accounts(
-        [_account_out(r, balances.get(r["id"])) for r in rows if r.get("archived_at") is None]
+        [_account_out(r, balances.get(r["id"]), jars) for r in rows if r.get("archived_at") is None]
     )
 
 
@@ -226,7 +237,9 @@ async def account_detail(
     account = to_ledger_account(row)
     months = ledger.account_months(account, txns, today)
     return AccountDetailOut(
-        account=_account_out(row, ledger.account_balances_on([account], txns, today)[account.id]),
+        account=_account_out(
+            row, ledger.account_balances_on([account], txns, today)[account.id], await _jar_money(repo, user_id)
+        ),
         money_in_this_month_paise=months[0].money_in,
         money_out_this_month_paise=months[0].money_out,
         months=[
@@ -261,7 +274,7 @@ async def edit_account(
         raise _fail(status.HTTP_404_NOT_FOUND, "This account no longer exists. Pull down to refresh.")
     rows, txns = await _load(repo, user_id)
     balances = ledger.account_balances_on([to_ledger_account(r) for r in rows], txns, today)
-    return _account_out(row, balances.get(row["id"]))
+    return _account_out(row, balances.get(row["id"]), await _jar_money(repo, user_id))
 
 
 @router.post("/accounts/{account_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
@@ -279,6 +292,13 @@ async def archive_account(
         raise _fail(
             status.HTTP_409_CONFLICT,
             "Move the balance to another account first. Only an account at ₹0 can be archived.",
+        )
+    if (await _jar_money(repo, user_id)).get(row["id"], 0) != 0 or any(
+        j["account_id"] == row["id"] and j["status"] != "archived" for j in await repo.list_jars(user_id)
+    ):
+        raise _fail(
+            status.HTTP_409_CONFLICT,
+            "A Goal Jar uses this account. Move the jar to another account or archive it first.",
         )
     if not await repo.archive_account(user_id, str(account_id)):
         raise _fail(status.HTTP_404_NOT_FOUND, "This account no longer exists. Pull down to refresh.")
@@ -456,11 +476,12 @@ async def net_worth(request: Request, today: Today, user_id: UserId, repo: Repo)
     accounts = [to_ledger_account(r) for r in rows]
     balances = ledger.account_balances_on(accounts, txns, today)
     pos = ledger.position_on(accounts, txns, today)
+    jars = await _jar_money(repo, user_id)
     return NetWorthOut(
         **_position_out(pos, today).model_dump(),
         change_this_month_paise=ledger.change_this_month(accounts, txns, today),
         accounts=_sorted_accounts(
-            [_account_out(r, balances.get(r["id"])) for r in rows if r.get("archived_at") is None]
+            [_account_out(r, balances.get(r["id"]), jars) for r in rows if r.get("archived_at") is None]
         ),
     )
 

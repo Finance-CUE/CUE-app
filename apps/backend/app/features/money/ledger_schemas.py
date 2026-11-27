@@ -218,6 +218,9 @@ class AccountOut(BaseModel):
     # Negative for a card with money due. None before the "Balance on" date.
     balance_paise: int | None
     created_at: datetime
+    # Goal Jars (suggestion 14): money set aside here, and the balance that is left.
+    in_jars_paise: int = 0
+    free_paise: int | None = None
 
 
 class TransactionOut(BaseModel):
@@ -387,3 +390,109 @@ class NetWorthHistoryOut(BaseModel):
     points: list[HistoryPointOut]
     # The first day with data; None before any account exists.
     history_starts: date | None
+
+
+# P2: Goal Jars (spec 4.7) -------------------------------------------------------------
+
+JarMethod = Literal["manual", "weekly", "monthly", "payday"]
+_JarName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+_Icon = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8)]
+
+
+class JarFields(_StrictRequest):
+    name: _JarName
+    icon: _Icon
+    target_paise: _Positive
+    target_date: _BoundedDate | None = None
+    account_id: _Id
+    method: JarMethod = "manual"
+    # How much each suggested contribution is; required unless the method is manual.
+    contribution_paise: _Positive | None = None
+
+    @model_validator(mode="after")
+    def _contribution_for_method(self):
+        if self.method != "manual" and self.contribution_paise is None:
+            raise ValueError("Enter how much to add each time.")
+        return self
+
+
+class JarCreate(JarFields):
+    """Create jar, the brief's eight steps in one request."""
+
+    client_key: _ClientKey
+    initial_paise: _NonNegative = 0
+
+
+class JarUpdate(JarFields):
+    """Edit goal. A new account moves the jar's money with it."""
+
+
+class JarMoveRequest(_StrictRequest):
+    """Add money or Withdraw: only the allocation moves."""
+
+    client_key: _ClientKey
+    amount_paise: _Positive
+    occurred_on: _BoundedDate
+    note: _Note = None
+
+
+class ContributionAnswer(_StrictRequest):
+    """Approve or skip a suggested automatic contribution."""
+
+    client_key: _ClientKey
+    due_on: _BoundedDate
+    approve: StrictBool
+
+
+class JarOut(BaseModel):
+    id: str
+    name: str
+    icon: str
+    target_paise: int
+    target_date: date | None
+    account_id: str
+    method: JarMethod
+    contribution_paise: int | None
+    next_contribution_on: date | None
+    status: Literal["active", "paused", "complete", "archived"]
+    # What the card shows: active, paused, complete or date_passed.
+    state: Literal["active", "paused", "complete", "date_passed"]
+    saved_paise: int
+    remaining_paise: int
+    progress: int
+    # Remaining ÷ months left; None without a target date.
+    suggested_monthly_paise: int | None
+    # "A little behind" (suggestion 17).
+    behind: bool
+    # A suggested contribution is waiting for approval.
+    contribution_due: bool
+    # How much more the account's jars hold than the account has; 0 when fine.
+    account_short_paise: int
+    celebrated: bool
+    created_at: datetime
+
+
+class JarsOut(BaseModel):
+    """The carousel: "₹57,000 set aside across 3 jars"."""
+
+    total_saved_paise: int
+    count: int
+    jars: list[JarOut]
+
+
+class JarMoveOut(BaseModel):
+    id: str
+    jar_id: str
+    amount_paise: int
+    account_id: str
+    occurred_on: date
+    note: str | None
+    auto: bool
+    created_at: datetime
+    deleted: bool = False
+
+
+class JarDetailOut(BaseModel):
+    jar: JarOut
+    # Newest first.
+    moves: list[JarMoveOut]

@@ -33,6 +33,8 @@ class FakeLedger:
         self.items: list[dict] = []
         # (user, item, month) -> (status, transaction id)
         self.cycle_rows: dict[tuple[str, str, date], tuple[str, str | None]] = {}
+        self.jars: list[dict] = []
+        self.jar_moves: list[dict] = []
 
     # Accounts ----------------------------------------------------------------
 
@@ -213,6 +215,51 @@ class FakeLedger:
             return False
         del self.cycle_rows[(user_id, item_id, month)]
         return True
+
+    # Goal Jars (sql/013) ------------------------------------------------------------
+
+    async def list_jars(self, user_id):
+        return [j for j in self.jars if j["user_id"] == user_id]
+
+    async def create_jar(self, user_id, body):
+        for j in self.jars:
+            if j["user_id"] == user_id and j["client_key"] == body["client_key"]:
+                return j, False
+        row = {
+            "id": key(), "user_id": user_id, "status": "active", "celebrated": False,
+            "completed_at": None, "created_at": now(), "updated_at": now(), **body,
+        }  # fmt: skip
+        self.jars.append(row)
+        return row, True
+
+    async def update_jar(self, user_id, jar_id, body):
+        for j in self.jars:
+            if j["id"] == jar_id and j["user_id"] == user_id and j["status"] != "archived":
+                j.update(body, updated_at=now())
+                return j
+        return None
+
+    async def list_jar_moves(self, user_id, include_deleted=False):
+        rows = [m for m in self.jar_moves if m["user_id"] == user_id and (include_deleted or m["deleted_at"] is None)]
+        return sorted(rows, key=lambda m: (m["occurred_on"], m["created_at"]), reverse=True)
+
+    async def add_jar_move(self, user_id, body):
+        for m in self.jar_moves:
+            if m["user_id"] == user_id and m["client_key"] == body["client_key"]:
+                return m, False
+        row = {"id": key(), "user_id": user_id, "deleted_at": None, "created_at": now(), **body}
+        self.jar_moves.append(row)
+        return row, True
+
+    async def get_jar_move(self, user_id, move_id):
+        return next((m for m in self.jar_moves if m["id"] == move_id and m["user_id"] == user_id), None)
+
+    async def set_jar_move_deleted(self, user_id, move_id, deleted):
+        m = await self.get_jar_move(user_id, move_id)
+        if m is None or (m["deleted_at"] is None) != deleted:
+            return None
+        m["deleted_at"] = now() if deleted else None
+        return m
 
     # Test helpers ----------------------------------------------------------------
 

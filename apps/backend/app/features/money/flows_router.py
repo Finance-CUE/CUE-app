@@ -13,7 +13,8 @@ from fastapi import APIRouter, Query, Request
 from app.features.assessment.router import UserId
 from app.features.auth.router import limiter
 from app.features.money import flows, ledger, schedule
-from app.features.money.ledger_repository import to_ledger_account, to_schedule_item
+from app.features.money import jars as jars_logic
+from app.features.money.ledger_repository import to_jar_move, to_ledger_account, to_schedule_item
 from app.features.money.ledger_router import Repo, Today, _load
 from app.features.money.ledger_schemas import (
     BucketOut,
@@ -79,7 +80,12 @@ async def this_month(request: Request, today: Today, user_id: UserId, repo: Repo
         if o.status == "due" and schedule.is_payment(o.item)
     ]
     accounts = [to_ledger_account(r) for r in rows]
-    free = ledger.position_on(accounts, txns, today).available_paise
+    # Free balance (section 8): available balance − money set aside in Goal Jars.
+    jar_money = jars_logic.in_jars_by_account(to_jar_move(m) for m in await repo.list_jar_moves(user_id))
+    available_ids = {a.id for a in accounts if a.kind in ledger.AVAILABLE_KINDS}
+    free = ledger.position_on(accounts, txns, today).available_paise - sum(
+        v for k, v in jar_money.items() if k in available_ids
+    )
     return MonthOut(
         month=first,
         income_paise=figures.income,
