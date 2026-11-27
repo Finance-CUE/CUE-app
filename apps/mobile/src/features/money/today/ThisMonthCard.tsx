@@ -9,12 +9,13 @@ import { useRupees } from '../privacy';
 import type { MonthSummary } from '../types';
 import { CardError, Eyebrow, Skeleton } from './parts';
 
-const LOOK: Record<Tile['key'], { bg: string; ink: string; icon: (c: string) => ReactNode }> = {
+// A function, not a constant: the accent and note colours follow the archetype.
+const look = (): Record<Tile['key'], { bg: string; ink: string; icon: (c: string) => ReactNode }> => ({
   income: { bg: ROLES.positiveSoft, ink: ROLES.positiveInk, icon: (c) => <InIcon color={c} size={16} /> },
   expenses: { bg: ROLES.noteSoft, ink: ROLES.noteInk, icon: (c) => <OutIcon color={c} size={16} /> },
   savings: { bg: ROLES.accentSoft, ink: ROLES.accent, icon: (c) => <SavingsIcon color={c} size={16} /> },
   dues: { bg: ROLES.attentionSoft, ink: ROLES.attention, icon: (c) => <CalendarIcon color={c} size={16} /> },
-};
+});
 
 /**
  * Block 3 (spec 4.4): "THIS MONTH · NOVEMBER" and four tappable tiles. An empty
@@ -59,7 +60,7 @@ export function ThisMonthCard({
 }
 
 function TileView({ tile, onPress }: { tile: Tile; onPress: () => void }) {
-  const look = LOOK[tile.key];
+  const style = look()[tile.key];
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -83,11 +84,11 @@ function TileView({ tile, onPress }: { tile: Tile; onPress: () => void }) {
           width: 28,
           height: 28,
           borderRadius: 8,
-          backgroundColor: look.bg,
+          backgroundColor: style.bg,
           alignItems: 'center',
           justifyContent: 'center',
         }}>
-        {look.icon(look.ink)}
+        {style.icon(style.ink)}
       </View>
       <Text style={{ ...TYPE.eyebrow, color: COLORS.muted }}>{tile.label}</Text>
       <Text numberOfLines={1} adjustsFontSizeToFit style={{ ...TYPE.cardAmount, color: COLORS.text }}>

@@ -2,7 +2,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
 
-import { COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
+import { bgAt, COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
 import { InsightsIcon, KhataIcon, TodayIcon, YouIcon } from './icons';
 
 const ICONS = { today: TodayIcon, insights: InsightsIcon, khata: KhataIcon, you: YouIcon };
@@ -18,7 +18,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
       style={{
         flexDirection: 'row',
         // Spec: bg at 92% opacity. No blur library is installed, so the tint carries it.
-        backgroundColor: 'rgba(225, 236, 242, 0.92)',
+        backgroundColor: bgAt(0.92),
         borderTopWidth: 1,
         borderTopColor: COLORS.cardBorder,
         paddingTop: 8,

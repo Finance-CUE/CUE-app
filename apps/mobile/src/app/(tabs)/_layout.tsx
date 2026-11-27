@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { AppState } from 'react-native';
 
 import { useAssessmentGate } from '@/features/assessment/hooks';
-import { COLORS } from '@/features/money/palette';
+import { applyArchetype, COLORS } from '@/features/money/palette';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 import { useAuthStore } from '@/features/auth/store';
 import { TabBar } from '@/features/money/components/TabBar';
 import { useNudgePlan, useSummary } from '@/features/money/hooks';
@@ -17,6 +18,10 @@ export default function TabsLayout() {
   const summary = useSummary(status === 'authenticated' && gate === 'clear');
 
   const queryClient = useQueryClient();
+  // The dashboard takes the user's archetype colours. Applied before any screen
+  // renders; the Tabs below remount when the archetype changes (a retake).
+  const slug = useArchetypeTheme().slug;
+  applyArchetype(slug);
 
   // Refetch on resume so the 7-day schedule keeps rolling forward and dues that
   // came due surface without a cold start (Coming up's "Check"). Scoped to these;
@@ -69,6 +74,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      key={slug ?? 'base'}
       tabBar={(props) => <TabBar {...props} />}
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: COLORS.background } }}>
       <Tabs.Screen name="today" options={{ title: 'Today' }} />

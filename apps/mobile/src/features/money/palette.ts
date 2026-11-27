@@ -1,42 +1,72 @@
 /**
  * The dashboard's colours and type (spec section 2): the CUE brand kit, navy and
- * teal. Screens ask for a role, never a hex value. Same keys as the assessment
- * palette, so every money screen moved over by changing one import; sign-in and
- * the assessment keep their own look.
+ * teal, themed by the user's archetype. Screens ask for a role, never a hex
+ * value. Same keys as the assessment palette, so every money screen moved over
+ * by changing one import; sign-in and the assessment keep their own look.
  *
- * P1 uses the base values for everyone. Archetype theming (P4) will fill the
- * themed roles from buildTheme(slug).roles instead of BASE.
+ * An archetype changes only the background tint, accent and note colours (with
+ * their soft and ink variants); money and text colours stay fixed, so income
+ * looks the same for everyone and amounts stay readable. Without a result, the
+ * base brand kit is used.
+ *
+ * ROLES and COLORS hold the active theme. applyArchetype() fills them before
+ * the dashboard renders; the tabs remount when the archetype changes, so every
+ * screen redraws in the new colours.
  */
 import { Platform } from 'react-native';
 
-import { buildRoles, type ColorRoles } from '@/features/theme/archetypeTheme';
+import { buildRoles, buildTheme, type ColorRoles } from '@/features/theme/archetypeTheme';
 import { FONT } from '@/features/theme/fonts';
 import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
-export const ROLES: ColorRoles = buildRoles(null, null);
+export const ROLES: ColorRoles = { ...buildRoles(null, null) };
 
-export const COLORS = {
-  background: ROLES.bg,
-  text: ROLES.ink,
-  muted: ROLES.inkSoft,
-  faint: ROLES.inkFaint,
-  // Input outlines and chips: a step stronger than card lines, so fields read as fields.
-  border: '#C9D0D7',
-  purple: ROLES.accent,
-  purpleSoft: ROLES.accentSoft,
-  track: ROLES.line,
-  white: '#FFFFFF',
-  sage: ROLES.positive,
-  peach: ROLES.note,
-  cardDark: ROLES.ink,
-  cardDarkText: '#D6DEE6',
-  cardBorder: ROLES.line,
-  card: ROLES.card,
-  error: '#B8505A',
-  sageTint: ROLES.positiveSoft,
-  peachTint: ROLES.noteSoft,
-  linkOnDark: '#9FD6E6',
-} as const;
+function colorsFor(r: ColorRoles) {
+  return {
+    background: r.bg,
+    text: r.ink,
+    muted: r.inkSoft,
+    faint: r.inkFaint,
+    // Input outlines and chips: a step stronger than card lines, so fields read as fields.
+    border: '#C9D0D7',
+    purple: r.accent,
+    purpleSoft: r.accentSoft,
+    track: r.line,
+    white: '#FFFFFF',
+    sage: r.positive,
+    peach: r.note,
+    cardDark: r.ink,
+    cardDarkText: '#D6DEE6',
+    cardBorder: r.line,
+    card: r.card,
+    error: '#B8505A',
+    sageTint: r.positiveSoft,
+    peachTint: r.noteSoft,
+    linkOnDark: '#9FD6E6',
+  };
+}
+
+export const COLORS = colorsFor(ROLES);
+
+let appliedSlug: string | null | undefined;
+
+/**
+ * Make `slug`'s theme the active one. Idempotent; call it during render, before
+ * the dashboard's children, wherever the archetype is known.
+ */
+export function applyArchetype(slug: string | null): void {
+  if (slug === appliedSlug) return;
+  appliedSlug = slug;
+  Object.assign(ROLES, buildTheme(slug).roles);
+  Object.assign(COLORS, colorsFor(ROLES));
+}
+
+/** The active background at `alpha`, e.g. the bottom nav at 92%. */
+export function bgAt(alpha: number): string {
+  const hex = ROLES.bg.replace('#', '');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 /** Serif for amounts, the user's name and sheet titles (Newsreader in place of Gyst). */
 export const HEADING_FONT = FONT.amount;
@@ -86,12 +116,12 @@ export const SOFT_SHADOW = Platform.select({
 });
 
 /**
- * The archetype theme with the dashboard's base colours over it: accents are
- * teal for everyone in P1 (archetype colours arrive in P4); the archetype's
- * words (question, belief) still come through.
+ * The user's archetype theme in dashboard roles: accents in the archetype's
+ * colour (made readable on white), plus its words (question, belief).
  */
 export function useDashboardTheme() {
   const theme = useArchetypeTheme();
+  applyArchetype(theme.slug);
   return {
     ...theme,
     accent: ROLES.accent,
