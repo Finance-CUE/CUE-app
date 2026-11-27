@@ -628,3 +628,54 @@ class GroupDetailOut(BaseModel):
     # Newest first.
     expenses: list[GroupExpenseOut]
     settlements: list[GroupSettlementOut]
+
+
+# P4: Intelligence (spec 3, 4.9, 4.10) -----------------------------------------------------
+
+
+class NoteBody(BaseModel):
+    key: str
+    kind: Literal["due_soon", "pending", "category_up", "jar_milestone", "streak"]
+    # Numbers only: the app writes the words with its own formatter (hidden amounts stay hidden).
+    params: dict
+    # "Understand this": the numbers and entries behind the note.
+    details: dict
+
+
+class NoteOut(BaseModel):
+    """A note from CUE (4.10). getting_to_know: under a week of logging, no note yet."""
+
+    getting_to_know: bool
+    note: NoteBody | None
+
+
+class DismissNote(_StrictRequest):
+    key: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+
+
+class AskRequest(_StrictRequest):
+    query: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+
+
+class AskOut(BaseModel):
+    """Ask CUE. Amounts in text and lines are {{₹<paise>}} tokens for the app to format.
+    A draft is never saved: the app opens the form for the user to check and save."""
+
+    kind: Literal["answer", "draft", "help"]
+    text: str
+    lines: list[str]
+    draft: dict | None
+    suggestions: list[str]
+
+
+class CategoryFix(_StrictRequest):
+    """Long-press to fix a category (suggestion 18); remember applies it to the merchant from now on."""
+
+    category: str
+    remember: StrictBool = False
+
+
+class MerchantCategoryOut(BaseModel):
+    merchant: str
+    kind: Literal["expense", "income"]
+    category: str

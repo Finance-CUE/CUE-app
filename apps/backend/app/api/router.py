@@ -4,6 +4,7 @@ from app.features.assessment.router import router as assessment_router
 from app.features.auth.router import router as auth_router
 from app.features.money.flows_router import router as flows_router
 from app.features.money.groups_router import router as groups_router
+from app.features.money.insights_router import router as insights_router
 from app.features.money.jars_router import router as jars_router
 from app.features.money.ledger_router import router as ledger_router
 from app.features.money.router import profile_router, router as money_router
@@ -18,4 +19,5 @@ api_router.include_router(schedule_router)
 api_router.include_router(flows_router)
 api_router.include_router(jars_router)
 api_router.include_router(groups_router)
+api_router.include_router(insights_router)
 api_router.include_router(profile_router)

@@ -613,6 +613,43 @@ class LedgerRepository(MoneyRepository):
         )
         return result is True
 
+    # Notes and category learning (sql/015) --------------------------------------------
+
+    async def list_note_log(self, user_id: str) -> list[dict]:
+        return await self._get_all(
+            "note_log", {"user_id": f"eq.{_uid(user_id)}", "select": "*", "order": "note_key.asc"}
+        )
+
+    async def upsert_note_log(self, user_id: str, note_key: str, fields: dict) -> None:
+        await self._request(
+            "POST",
+            "note_log",
+            params={"on_conflict": "user_id,note_key"},
+            json={"user_id": _uid(user_id), "note_key": note_key, **fields},
+            prefer="resolution=merge-duplicates",
+        )
+
+    async def list_merchant_categories(self, user_id: str) -> list[dict]:
+        return await self._get_all(
+            "merchant_categories",
+            {"user_id": f"eq.{_uid(user_id)}", "select": "*", "order": "merchant.asc,kind.asc"},
+        )
+
+    async def upsert_merchant_category(self, user_id: str, merchant: str, kind: str, category: str) -> None:
+        await self._request(
+            "POST",
+            "merchant_categories",
+            params={"on_conflict": "user_id,merchant,kind"},
+            json={
+                "user_id": _uid(user_id),
+                "merchant": merchant,
+                "kind": kind,
+                "category": category,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+            prefer="resolution=merge-duplicates",
+        )
+
     async def _rpc(self, name: str, args: dict) -> dict | None:
         row = await self._request("POST", f"rpc/{name}", json=args)
         return row[0] if isinstance(row, list) and row else (row or None)

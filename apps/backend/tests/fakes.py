@@ -39,6 +39,8 @@ class FakeLedger:
         self.members: list[dict] = []
         self.gexpenses: list[dict] = []
         self.gsettlements: list[dict] = []
+        self.note_log: dict[tuple[str, str], dict] = {}
+        self.merchants: dict[tuple[str, str, str], str] = {}
 
     # Accounts ----------------------------------------------------------------
 
@@ -359,6 +361,20 @@ class FakeLedger:
             if t.get(link) == entry_id:
                 t["deleted_at"] = stamp
         return True
+
+    # Notes and category learning (sql/015) --------------------------------------------
+
+    async def list_note_log(self, user_id):
+        return [{"note_key": k, **v} for (u, k), v in self.note_log.items() if u == user_id]
+
+    async def upsert_note_log(self, user_id, note_key, fields):
+        self.note_log.setdefault((user_id, note_key), {"last_shown_on": None, "dismissed_on": None}).update(fields)
+
+    async def list_merchant_categories(self, user_id):
+        return [{"merchant": m, "kind": k, "category": c} for (u, m, k), c in sorted(self.merchants.items()) if u == user_id]
+
+    async def upsert_merchant_category(self, user_id, merchant, kind, category):
+        self.merchants[(user_id, merchant, kind)] = category
 
     # Test helpers ----------------------------------------------------------------
 
