@@ -35,6 +35,10 @@ class FakeLedger:
         self.cycle_rows: dict[tuple[str, str, date], tuple[str, str | None]] = {}
         self.jars: list[dict] = []
         self.jar_moves: list[dict] = []
+        self.groups: list[dict] = []
+        self.members: list[dict] = []
+        self.gexpenses: list[dict] = []
+        self.gsettlements: list[dict] = []
 
     # Accounts ----------------------------------------------------------------
 
@@ -261,6 +265,101 @@ class FakeLedger:
         m["deleted_at"] = now() if deleted else None
         return m
 
+    # Groups (sql/014 put_group_expense, put_group_settlement, set_group_entry_deleted) ---
+
+    async def list_groups(self, user_id):
+        return [g for g in self.groups if g["user_id"] == user_id]
+
+    async def create_group(self, user_id, body, members):
+        for g in self.groups:
+            if g["user_id"] == user_id and g["client_key"] == body["client_key"]:
+                return g, False
+        g = {"id": key(), "user_id": user_id, "archived_at": None, "created_at": now(), **body}
+        self.groups.append(g)
+        await self.add_group_members(user_id, g["id"], members, with_me=True)
+        return g, True
+
+    async def update_group(self, user_id, group_id, body):
+        for g in self.groups:
+            if g["id"] == group_id and g["user_id"] == user_id and g["archived_at"] is None:
+                g.update(body)
+                return g
+        return None
+
+    async def list_group_members(self, user_id):
+        return [m for m in self.members if m["user_id"] == user_id]
+
+    async def add_group_members(self, user_id, group_id, names, with_me=False):
+        rows = ([("You", True)] if with_me else []) + [(n, False) for n in names]
+        for name, me in rows:
+            if any(m["group_id"] == group_id and m["removed_at"] is None and m["name"].lower() == name.lower()
+                   for m in self.members):  # fmt: skip
+                raise MoneyConflictError("name")
+            self.members.append({"id": key(), "user_id": user_id, "group_id": group_id, "name": name,
+                                 "is_me": me, "removed_at": None, "created_at": now()})  # fmt: skip
+
+    async def remove_group_member(self, user_id, member_id):
+        for m in self.members:
+            if m["id"] == member_id and m["user_id"] == user_id and not m["is_me"]:
+                m["removed_at"] = now()
+
+    async def list_group_expenses(self, user_id):
+        rows = [e for e in self.gexpenses if e["user_id"] == user_id and e["deleted_at"] is None]
+        return sorted(rows, key=lambda e: (e["occurred_on"], e["created_at"]), reverse=True)
+
+    async def list_group_settlements(self, user_id):
+        rows = [s for s in self.gsettlements if s["user_id"] == user_id and s["deleted_at"] is None]
+        return sorted(rows, key=lambda s: (s["occurred_on"], s["created_at"]), reverse=True)
+
+    def _ledger_rows(self, user_id, rows, group_id, link, link_id, on):
+        for r in rows:
+            self.txns.append({
+                "id": key(), "user_id": user_id, "client_key": key(), "account_id": r.get("account_id"),
+                "to_account_id": None, "category": r.get("category"), "description": r.get("description"),
+                "note": None, "reason": None, "khata_entry_id": None, "refund_of": None, "source": "app",
+                "schedule_id": None, "deleted_at": None, "created_at": now(), "updated_at": now(),
+                "type": r["type"], "amount_paise": r["amount_paise"], "occurred_on": on,
+                "group_id": group_id, link: link_id,
+            })  # fmt: skip
+
+    async def put_group_expense(self, user_id, expense, shares, txns):
+        if expense.get("id") is None:
+            for e in self.gexpenses:
+                if e["user_id"] == user_id and e["client_key"] == expense["client_key"]:
+                    return e
+            row = {"id": key(), "user_id": user_id, "deleted_at": None, "created_at": now(), **expense}
+            self.gexpenses.append(row)
+        else:
+            row = next((e for e in self.gexpenses if e["id"] == expense["id"] and e["deleted_at"] is None), None)
+            if row is None:
+                return None
+            row.update({k: v for k, v in expense.items() if k != "client_key"})
+            self.txns = [t for t in self.txns if t.get("group_expense_id") != row["id"]]
+        row["group_expense_shares"] = shares
+        self._ledger_rows(user_id, txns, row["group_id"], "group_expense_id", row["id"], row["occurred_on"])
+        return row
+
+    async def put_group_settlement(self, user_id, settlement, txns):
+        for s in self.gsettlements:
+            if s["user_id"] == user_id and s["client_key"] == settlement["client_key"]:
+                return s
+        row = {"id": key(), "user_id": user_id, "deleted_at": None, "created_at": now(), **settlement}
+        self.gsettlements.append(row)
+        self._ledger_rows(user_id, txns, row["group_id"], "group_settlement_id", row["id"], row["occurred_on"])
+        return row
+
+    async def set_group_entry_deleted(self, user_id, kind, entry_id, deleted):
+        table, link = (self.gexpenses, "group_expense_id") if kind == "expense" else (self.gsettlements, "group_settlement_id")
+        row = next((r for r in table if r["id"] == entry_id and r["user_id"] == user_id), None)
+        if row is None or (row["deleted_at"] is None) != deleted:
+            return False
+        stamp = now() if deleted else None
+        row["deleted_at"] = stamp
+        for t in self.txns:
+            if t.get(link) == entry_id:
+                t["deleted_at"] = stamp
+        return True
+
     # Test helpers ----------------------------------------------------------------
 
     def live(self, user_id, type_=None) -> list[dict]:
@@ -278,6 +377,7 @@ class FakeMoney(FakeLedger):
         super().__init__()
         self.khata: dict[str, list[KhataEntry]] = {}
         self.settled: dict[str, str] = {}
+        self.due: dict[str, object] = {}
         self.subs: dict[str, list[Subscription]] = {}
         self.cycles: dict[str, dict[str, dict[date, str | None]]] = {}
         self.nudges: dict[str, Nudges] = {}
@@ -320,12 +420,48 @@ class FakeMoney(FakeLedger):
             {
                 "client_key": key(),
                 "type": "repayment_received" if entry.direction == "lent" else "repayment_made",
-                "amount_paise": entry.amount_paise, "account_id": account_id,
+                "amount_paise": self._open(user_id, entry), "account_id": account_id,
                 "khata_entry_id": entry.id, "description": entry.person,
                 "occurred_on": on.isoformat(), "source": "app" if account_id else "legacy",
             },
         )  # fmt: skip
         return entry
+
+    async def set_khata_due(self, user_id, entry_id, due_on):
+        self.due[entry_id] = due_on
+
+    def _open(self, user_id, entry):
+        repaid = sum(t["amount_paise"] for t in self.live(user_id)
+                     if t["khata_entry_id"] == entry.id and t["type"] in ("repayment_received", "repayment_made"))  # fmt: skip
+        return entry.amount_paise - repaid
+
+    async def settle_person(self, user_id, client_key, person, from_them, amount, account_id, on):
+        if await self.get_by_client_key(user_id, client_key):
+            return 0
+        left, first = amount, True
+        direction = "lent" if from_them else "borrowed"
+        for e in sorted(await self.list_open_khata(user_id), key=lambda k: k.created_at):
+            if left <= 0 or e.direction != direction or e.person.lower() != person.strip().lower():
+                continue
+            pay = min(left, self._open(user_id, e))
+            await self.add_transaction(user_id, {
+                "client_key": client_key if first else key(),
+                "type": "repayment_received" if from_them else "repayment_made",
+                "amount_paise": pay, "account_id": account_id, "khata_entry_id": e.id,
+                "description": e.person, "occurred_on": on.isoformat(),
+            })  # fmt: skip
+            first = False
+            if self._open(user_id, e) == 0:
+                self.settled[e.id] = now()
+            left -= pay
+        if left > 0:
+            from app.features.money.schemas import KhataCreate
+
+            await self.add_khata_entry(
+                user_id, KhataCreate(direction="borrowed" if from_them else "lent", person=person, amount_paise=left),
+                client_key if first else key(), account_id, on,
+            )  # fmt: skip
+        return left
 
     async def delete_khata(self, user_id, entry_id):
         rows = self.khata.get(user_id, [])

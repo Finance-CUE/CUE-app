@@ -111,6 +111,10 @@ def _position_out(pos: ledger.Position, on: date) -> PositionOut:
         total_assets_paise=pos.total_assets_paise,
         total_liabilities_paise=pos.total_liabilities_paise,
         net_worth_paise=pos.net_worth_paise,
+        money_lent_paise=pos.money_lent_paise,
+        money_borrowed_paise=pos.money_borrowed_paise,
+        group_owed_paise=pos.group_owed_paise,
+        group_owe_paise=pos.group_owe_paise,
     )
 
 
@@ -427,7 +431,7 @@ async def edit_transaction(
     current = await repo.get_transaction(user_id, str(txn_id))
     if current is None or current.get("deleted_at"):
         raise _gone()
-    if current["type"] not in EDITABLE:
+    if current["type"] not in EDITABLE or current.get("group_id"):
         raise _fail(status.HTTP_422_UNPROCESSABLE_CONTENT, "This entry can't be edited here.")
     await _check_entry(repo, user_id, current["type"], payload)
     row = await repo.update_transaction(user_id, str(txn_id), _entry_body(payload))
@@ -445,7 +449,7 @@ async def delete_transaction(
     current = await repo.get_transaction(user_id, str(txn_id))
     if current is None or current.get("deleted_at"):
         raise _gone()
-    if current["type"] not in DELETABLE:
+    if current["type"] not in DELETABLE or current.get("group_id"):
         raise _fail(status.HTTP_422_UNPROCESSABLE_CONTENT, "This entry can't be deleted here.")
     row = await repo.set_deleted(user_id, str(txn_id), True)
     if row is None:

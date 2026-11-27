@@ -32,6 +32,7 @@ from app.features.money.schemas import (
     DueCycle,
     KhataCreate,
     KhataEntry,
+    PersonSettle,
     MoneySummary,
     Nudges,
     NudgesPut,
@@ -258,7 +259,47 @@ async def summary(request: Request, user_id: UserId, repo: Repo, tz: Tz) -> Mone
 @router.get("/khata")
 @limiter.limit("120/minute")
 async def list_khata(request: Request, user_id: UserId, repo: Repo) -> list[KhataEntry]:
-    return await repo.list_open_khata(user_id)
+    """Open entries with what is still owed after part payments."""
+    entries = await repo.list_open_khata(user_id)
+    repaid: dict[str, int] = {}
+    for t in await repo.list_transactions(user_id):
+        if t.get("khata_entry_id") and t["type"] in ("repayment_received", "repayment_made"):
+            repaid[t["khata_entry_id"]] = repaid.get(t["khata_entry_id"], 0) + int(t["amount_paise"])
+    return [e.model_copy(update={"outstanding_paise": e.amount_paise - repaid.get(e.id, 0)}) for e in entries]
+
+
+def _open_with(entries: list[KhataEntry], person: str, direction: str) -> int:
+    key = person.strip().casefold()
+    return sum(
+        e.outstanding_paise if e.outstanding_paise is not None else e.amount_paise
+        for e in entries
+        if e.person.strip().casefold() == key and e.direction == direction
+    )
+
+
+@router.post("/khata/settle-person", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("60/minute")
+async def settle_person(
+    request: Request, payload: PersonSettle, user_id: UserId, repo: Repo, tz: Tz
+) -> Response:
+    """Part (or full) payment with one person. Never income or spending: the
+    money moves through the account and what is owed goes down."""
+    if payload.occurred_on > datetime.now(tz).date():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="The date can't be in the future.")
+    account = await _chosen_account(repo, user_id, payload.account_id)
+    open_paise = _open_with(
+        await list_khata(request, user_id, repo), payload.person, "lent" if payload.from_them else "borrowed"
+    )
+    if payload.amount_paise > open_paise and not payload.allow_over:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"That's more than the ₹{open_paise / 100:,.0f} open with {payload.person}. Confirm to record the rest the other way.",
+        )
+    await repo.settle_person(
+        user_id, str(payload.client_key), payload.person, payload.from_them,
+        payload.amount_paise, account, payload.occurred_on,
+    )  # fmt: skip
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/khata", status_code=status.HTTP_201_CREATED)
@@ -272,13 +313,15 @@ async def add_khata(
         account = await _chosen_account(repo, user_id, payload.account_id)
     else:
         account = legacy.pick_account(await repo.list_accounts(user_id), "cash")
-    return await repo.add_khata_entry(
-        user_id,
-        payload,
-        str(payload.client_key or uuid.uuid4()),
-        account,
-        datetime.now(tz).date(),
-    )
+    today = datetime.now(tz).date()
+    on = payload.occurred_on or today
+    if on > today:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="The date can't be in the future.")
+    entry = await repo.add_khata_entry(user_id, payload, str(payload.client_key or uuid.uuid4()), account, on)
+    if payload.due_on is not None:
+        await repo.set_khata_due(user_id, entry.id, payload.due_on)
+        entry = entry.model_copy(update={"due_on": payload.due_on})
+    return entry.model_copy(update={"outstanding_paise": entry.amount_paise})
 
 
 @router.post("/khata/{entry_id}/settle", status_code=status.HTTP_204_NO_CONTENT)

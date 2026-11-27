@@ -37,6 +37,7 @@ def to_ledger_txn(row: dict) -> Txn:
         to_account_id=row.get("to_account_id"),
         khata_entry_id=row.get("khata_entry_id"),
         category=row.get("category"),
+        group_id=row.get("group_id"),
     )
 
 
@@ -253,6 +254,33 @@ class LedgerRepository(MoneyRepository):
             },
         )
         return KhataEntry(**row) if row and row.get("id") is not None else None
+
+    async def set_khata_due(self, user_id: str, entry_id: str, due_on: date) -> None:
+        await self._request(
+            "PATCH",
+            "khata_entries",
+            params={"id": f"eq.{_uid(entry_id)}", "user_id": f"eq.{_uid(user_id)}"},
+            json={"due_on": due_on.isoformat()},
+        )
+
+    async def settle_person(
+        self, user_id: str, client_key: str, person: str, from_them: bool, amount: int, account_id: str, on: date
+    ) -> int:
+        """Part payment with a person (sql/014). Returns what went beyond the open balance."""
+        result = await self._request(
+            "POST",
+            "rpc/settle_person",
+            json={
+                "p_user": _uid(user_id),
+                "p_client_key": _uid(client_key),
+                "p_person": person,
+                "p_from_them": from_them,
+                "p_amount": amount,
+                "p_account": _uid(account_id),
+                "p_on": on.isoformat(),
+            },
+        )
+        return int(result or 0)
 
     # Subscription payments on the ledger (sql/011) ------------------------------
 
@@ -490,6 +518,100 @@ class LedgerRepository(MoneyRepository):
             prefer=_REP,
         )
         return rows[0] if rows else None
+
+    # Groups (sql/014) ------------------------------------------------------------------
+
+    async def list_groups(self, user_id: str) -> list[dict]:
+        return await self._list("groups", user_id, "created_at.asc")
+
+    async def create_group(self, user_id: str, body: dict, members: list[str]) -> tuple[dict, bool]:
+        """(row, created). The group, then "You" and its members. A retry with the same
+        client key returns the group it made."""
+        try:
+            group = await self._insert("groups", user_id, body)
+        except MoneyConflictError:
+            rows = await self._request(
+                "GET",
+                "groups",
+                params={"user_id": f"eq.{_uid(user_id)}", "client_key": f"eq.{_uid(body['client_key'])}", "select": "*"},
+            )
+            if not rows:
+                raise
+            return rows[0], False
+        await self.add_group_members(user_id, group["id"], members, with_me=True)
+        return group, True
+
+    async def update_group(self, user_id: str, group_id: str, body: dict) -> dict | None:
+        rows = await self._request(
+            "PATCH",
+            "groups",
+            params={"id": f"eq.{_uid(group_id)}", "user_id": f"eq.{_uid(user_id)}", "archived_at": "is.null"},
+            json=body,
+            prefer=_REP,
+        )
+        return rows[0] if rows else None
+
+    async def list_group_members(self, user_id: str) -> list[dict]:
+        return await self._list("group_members", user_id, "created_at.asc")
+
+    async def add_group_members(self, user_id: str, group_id: str, names: list[str], with_me: bool = False) -> None:
+        rows = ([{"name": "You", "is_me": True}] if with_me else []) + [{"name": n, "is_me": False} for n in names]
+        if not rows:
+            return
+        await self._request(
+            "POST",
+            "group_members",
+            json=[{**r, "group_id": _uid(group_id), "user_id": _uid(user_id)} for r in rows],
+            prefer=_REP,
+        )
+
+    async def remove_group_member(self, user_id: str, member_id: str) -> None:
+        await self._request(
+            "PATCH",
+            "group_members",
+            params={"id": f"eq.{_uid(member_id)}", "user_id": f"eq.{_uid(user_id)}", "is_me": "is.false"},
+            json={"removed_at": datetime.now(UTC).isoformat()},
+        )
+
+    async def list_group_expenses(self, user_id: str) -> list[dict]:
+        """Live expenses with their shares, newest first."""
+        return await self._get_all(
+            "group_expenses",
+            {
+                "user_id": f"eq.{_uid(user_id)}",
+                "deleted_at": "is.null",
+                "select": "*,group_expense_shares(member_id,share_paise)",
+                "order": "occurred_on.desc,created_at.desc,id.asc",
+            },
+        )
+
+    async def list_group_settlements(self, user_id: str) -> list[dict]:
+        return await self._list("group_settlements", user_id, "occurred_on.desc,created_at.desc", deleted_at="is.null")
+
+    async def put_group_expense(self, user_id: str, expense: dict, shares: list[dict], txns: list[dict]) -> dict | None:
+        """Create or replace an expense with its shares and ledger rows, atomically."""
+        row = await self._rpc(
+            "put_group_expense",
+            {"p_user": _uid(user_id), "p_expense": expense, "p_shares": shares, "p_txns": txns},
+        )
+        return row if row and row.get("id") is not None else None
+
+    async def put_group_settlement(self, user_id: str, settlement: dict, txns: list[dict]) -> dict:
+        row = await self._rpc(
+            "put_group_settlement", {"p_user": _uid(user_id), "p_settlement": settlement, "p_txns": txns}
+        )
+        if not row or row.get("id") is None:
+            raise MoneyStoreError("Money service returned no row.")
+        return row
+
+    async def set_group_entry_deleted(self, user_id: str, kind: str, entry_id: str, deleted: bool) -> bool:
+        """Delete or Undo an expense or settlement with its ledger rows."""
+        result = await self._request(
+            "POST",
+            "rpc/set_group_entry_deleted",
+            json={"p_user": _uid(user_id), "p_kind": kind, "p_id": _uid(entry_id), "p_deleted": deleted},
+        )
+        return result is True
 
     async def _rpc(self, name: str, args: dict) -> dict | None:
         row = await self._request("POST", f"rpc/{name}", json=args)

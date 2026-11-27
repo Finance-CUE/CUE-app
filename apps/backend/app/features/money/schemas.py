@@ -100,6 +100,9 @@ class KhataCreate(_StrictRequest):
     # The account chip (default Cash). Older apps send neither field.
     account_id: _OptionalId = None
     client_key: _OptionalId = None
+    # Quick Add Lend and Borrow (P3): when it happened (default today) and an optional due date.
+    occurred_on: _BoundedDate | None = None
+    due_on: _BoundedDate | None = None
 
 
 class SubscriptionCreate(_StrictRequest):
@@ -143,6 +146,26 @@ class KhataEntry(BaseModel):
     amount_paise: int
     note: str | None
     created_at: datetime
+    # P3: what is still open after part payments, and the due date if one was set.
+    outstanding_paise: int | None = None
+    due_on: date | None = None
+
+
+class PersonSettle(_StrictRequest):
+    """A payment between the user and one person, any amount (spec Settlement).
+
+    from_them: they paid the user (reduces money lent); otherwise the user paid
+    them (reduces money borrowed). More than is open needs allow_over: the rest
+    becomes a new entry the other way.
+    """
+
+    client_key: Annotated[uuid.UUID, Field(strict=False)]
+    person: _Name
+    from_them: StrictBool
+    amount_paise: _Positive
+    account_id: Annotated[uuid.UUID, Field(strict=False)]
+    occurred_on: _BoundedDate
+    allow_over: StrictBool = False
 
 
 class Subscription(BaseModel):

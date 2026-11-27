@@ -239,6 +239,10 @@ class TransactionOut(BaseModel):
     # The scheduled item it belongs to: a payment marked paid, or an entry saved
     # with "recurring" on (history's Recurring filter).
     schedule_id: str | None = None
+    # Group rows (P3): the group, and the expense or settlement they come from.
+    group_id: str | None = None
+    group_expense_id: str | None = None
+    group_settlement_id: str | None = None
     occurred_on: date
     created_at: datetime
     updated_at: datetime
@@ -258,6 +262,11 @@ class PositionOut(BaseModel):
     total_assets_paise: int
     total_liabilities_paise: int
     net_worth_paise: int
+    # The breakdown's rows (spec 4.3, suggestion 10): personal Khata and groups apart.
+    money_lent_paise: int = 0
+    money_borrowed_paise: int = 0
+    group_owed_paise: int = 0
+    group_owe_paise: int = 0
 
 
 class AccountMonthOut(BaseModel):
@@ -496,3 +505,126 @@ class JarDetailOut(BaseModel):
     jar: JarOut
     # Newest first.
     moves: list[JarMoveOut]
+
+
+# P3: Groups (spec 5 and 8) ---------------------------------------------------------------
+
+_MemberName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
+class GroupCreate(_StrictRequest):
+    """A group of names; the user is added as "You"."""
+
+    client_key: _ClientKey
+    name: _JarName
+    icon: _Icon
+    members: Annotated[list[_MemberName], Field(min_length=1, max_length=20)]
+
+
+class GroupUpdate(_StrictRequest):
+    name: _JarName
+    icon: _Icon
+    add_members: Annotated[list[_MemberName], Field(max_length=20)] = []
+    # Only someone with nothing in the group yet can be removed.
+    remove_members: Annotated[list[_Id], Field(max_length=20)] = []
+
+
+class GroupExpenseIn(_StrictRequest):
+    """Quick Add Group Expense: who paid, who shares it and how."""
+
+    client_key: _ClientKey
+    description: _Description
+    category: ExpenseCategory = "other"
+    amount_paise: _Positive
+    paid_by: _Id
+    split: Literal["equal", "exact"]
+    # Equal: the people sharing it. Exact: member id -> share in paise.
+    participants: Annotated[list[_Id], Field(max_length=21)] = []
+    shares: dict[str, Annotated[StrictInt, Field(ge=0, le=MAX_PAISE)]] = {}
+    occurred_on: _BoundedDate
+    note: _Note = None
+    # The user's account, needed when the user paid.
+    account_id: _Id | None = None
+
+
+class GroupSettlementIn(_StrictRequest):
+    """Settlement in a group: who paid whom, how much and when."""
+
+    client_key: _ClientKey
+    from_member: _Id
+    to_member: _Id
+    amount_paise: _Positive
+    occurred_on: _BoundedDate
+    note: _Note = None
+    # The user's account, needed when the user paid or was paid.
+    account_id: _Id | None = None
+
+
+class GroupMemberOut(BaseModel):
+    id: str
+    name: str
+    is_me: bool
+    removed: bool
+    # Positive: the group owes them. Negative: they owe.
+    balance_paise: int
+
+
+class GroupOut(BaseModel):
+    id: str
+    name: str
+    icon: str
+    archived: bool
+    # The user's balance: positive is owed to them, negative they owe.
+    my_balance_paise: int
+    member_count: int
+    created_at: datetime
+
+
+class GroupsOut(BaseModel):
+    """Khata › Groups, and the breakdown's group rows."""
+
+    owed_to_you_paise: int
+    you_owe_paise: int
+    groups: list[GroupOut]
+
+
+class GroupExpenseOut(BaseModel):
+    id: str
+    description: str
+    category: str
+    amount_paise: int
+    paid_by: str
+    split: Literal["equal", "exact"]
+    shares: dict[str, int]
+    my_share_paise: int
+    occurred_on: date
+    note: str | None
+    account_id: str | None
+    created_at: datetime
+
+
+class GroupSettlementOut(BaseModel):
+    id: str
+    from_member: str
+    to_member: str
+    amount_paise: int
+    occurred_on: date
+    note: str | None
+    account_id: str | None
+    created_at: datetime
+
+
+class SettleStepOut(BaseModel):
+    from_member: str
+    to_member: str
+    amount_paise: int
+
+
+class GroupDetailOut(BaseModel):
+    group: GroupOut
+    members: list[GroupMemberOut]
+    # Who pays whom to settle everything, in few payments.
+    settle_up: list[SettleStepOut]
+    # Newest first.
+    expenses: list[GroupExpenseOut]
+    settlements: list[GroupSettlementOut]

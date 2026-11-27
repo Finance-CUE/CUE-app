@@ -53,11 +53,17 @@ class Txn:
     to_account_id: str | None = None
     khata_entry_id: str | None = None
     category: str | None = None
+    group_id: str | None = None
 
 
 @dataclass(frozen=True)
 class Position:
-    """Where the user stood at the end of one day (the "Your position on" sheet)."""
+    """Where the user stood at the end of one day (the "Your position on" sheet).
+
+    Receivables = money lent (personal Khata) + what groups owe the user;
+    borrowings = money borrowed + what the user owes groups (section 8). Each
+    comes from exactly one ledger, so nothing is counted twice (suggestion 10).
+    """
 
     available_paise: int
     other_assets_paise: int
@@ -65,6 +71,10 @@ class Position:
     card_dues_paise: int
     borrowings_paise: int
     other_liabilities_paise: int
+    money_lent_paise: int = 0
+    money_borrowed_paise: int = 0
+    group_owed_paise: int = 0
+    group_owe_paise: int = 0
 
     @property
     def total_assets_paise(self) -> int:
@@ -199,14 +209,15 @@ def account_months(account: Account, txns: list[Txn], today: date, count: int = 
 
 
 def khata_outstanding_on(txns: Iterable[Txn], day: date) -> tuple[int, int]:
-    """(money lent outstanding, money borrowed outstanding) at the end of `day`.
+    """(money lent outstanding, money borrowed outstanding) at the end of `day`,
+    for personal Khata only (group rows are netted per group instead).
 
     Lent − repayments received; borrowed − repayments made. These do not depend
     on any account's opening: a receivable exists whichever account paid it.
     """
     lent = borrowed = 0
     for t in txns:
-        if t.occurred_on > day:
+        if t.occurred_on > day or t.group_id is not None:
             continue
         if t.type == "lend":
             lent += t.amount_paise
@@ -217,6 +228,20 @@ def khata_outstanding_on(txns: Iterable[Txn], day: date) -> tuple[int, int]:
         elif t.type == "repayment_made":
             borrowed -= t.amount_paise
     return lent, borrowed
+
+
+_GROUP_SIGN: dict[str, int] = {"lend": 1, "repayment_received": -1, "borrow": -1, "repayment_made": 1}
+
+
+def group_balances_on(txns: Iterable[Txn], day: date) -> dict[str, int]:
+    """The user's net position in each group at the end of `day`: positive is owed
+    to them, negative they owe. Expenses and settlements net out within a group."""
+    out: dict[str, int] = {}
+    for t in txns:
+        if t.group_id is None or t.occurred_on > day or t.type not in _GROUP_SIGN:
+            continue
+        out[t.group_id] = out.get(t.group_id, 0) + _GROUP_SIGN[t.type] * t.amount_paise
+    return out
 
 
 def position_on(accounts: list[Account], txns: list[Txn], day: date) -> Position:
@@ -238,13 +263,20 @@ def position_on(accounts: list[Account], txns: list[Txn], day: date) -> Position
         else:
             other_assets += b  # an overpaid card, or a positive "other" account
     lent, borrowed = khata_outstanding_on(txns, day)
+    groups = group_balances_on(txns, day).values()
+    owed = sum(v for v in groups if v > 0)
+    owe = -sum(v for v in groups if v < 0)
     return Position(
         available_paise=available,
         other_assets_paise=other_assets,
-        receivables_paise=max(lent, 0),
+        receivables_paise=max(lent, 0) + owed,
         card_dues_paise=card_dues,
-        borrowings_paise=max(borrowed, 0),
+        borrowings_paise=max(borrowed, 0) + owe,
         other_liabilities_paise=other_liabilities,
+        money_lent_paise=max(lent, 0),
+        money_borrowed_paise=max(borrowed, 0),
+        group_owed_paise=owed,
+        group_owe_paise=owe,
     )
 
 
