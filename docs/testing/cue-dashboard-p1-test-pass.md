@@ -1,6 +1,6 @@
 CUE dashboard P1 test pass
 
-This build adds money in and out to the Today tab: this month's income, spending, savings and dues; bills and subscriptions you can mark paid; a cash flow chart; a net worth chart; and a new navy and teal look.
+This build adds money in and out to the Today tab: this month's income, spending, savings and dues; bills and subscriptions you can mark paid; a cash flow chart; a net worth chart; and a new look in your archetype's colours.
 
 Install (Android only): open the APK link on your phone, tap Download, open the file, and allow "Install from this source" if Android asks. Install it over your current CUE: your account and data stay. Settings › Apps › CUE should say version 1.2.1.
 
@@ -8,7 +8,7 @@ Report each problem as: step number, what you did, what you saw, a screenshot or
 Amounts can be made up. CUE only records what you type; no real money moves.
 
 What is different from 1.2.0, so you're not surprised:
-- Today is in navy and teal, with new fonts. Sign-in and the assessment keep their old look for now.
+- Today has a new look and new fonts: navy text with your archetype's colour for accents, buttons and highlights. Sign-in and the assessment keep their old look for now.
 - The weekly spending bars are gone. "Where your money moves" replaces them.
 - Subscriptions no longer ask "Is it still active?" in a pop-up. Due payments wait in Coming up with a "Check" tag until you mark them paid or skip them.
 - You can now pick days up to four weeks ahead on the date row. They show only what is due that day.
@@ -18,14 +18,13 @@ Already known, no need to report:
 - "A note from CUE" still says "CUE is getting to know your patterns."
 - The "this month" change under your net worth stays hidden until you have used CUE for a full previous month.
 - Banks show a letter, not their logo.
-- The colours are the same for everyone; your archetype's colours come in a later update.
 - No iPhone version yet.
 - The first open after a long quiet period can take up to a minute ("Waking CUE up").
 
 Test the steps below one by one and write your result next to each (WORKS / DOESN'T / what happened).
 
 The new look
-1. Open Today. The background is light blue-grey, cards are white, amounts are in a serif font, and the + button is dark navy. Nothing overlaps or is cut off.
+1. Open Today. The background is a light tint of your archetype's colour, cards are white, amounts are in a serif font, and the + button is dark navy. Selected dates, links and chips are in your archetype's colour. Nothing overlaps or is cut off.
 2. Scroll from top to bottom. The order is: greeting and dates, net worth, four round buttons, THIS MONTH tiles, A note from CUE, Your accounts, Where your money moves, Coming up, Today.
 
 This month
