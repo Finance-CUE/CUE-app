@@ -33,12 +33,15 @@ function groupIndian(whole: number): string {
   return `${head},${digits.slice(-3)}`;
 }
 
-/** `₹1,00,000.00`, `₹120.50`, negatives as `−₹500` (U+2212). */
+/**
+ * Indian grouping, no decimals unless there are paise (Dashboard spec, section 2):
+ * `₹1,00,000`, `₹120.50`, negatives as `−₹500` (U+2212).
+ */
 export function formatRupees(paise: number): string {
   const abs = Math.abs(paise);
   const whole = Math.floor(abs / 100);
   const rest = abs % 100;
-  const body = `₹${groupIndian(whole)}.${String(rest).padStart(2, '0')}`;
+  const body = `₹${groupIndian(whole)}${rest === 0 ? '' : `.${String(rest).padStart(2, '0')}`}`;
   return paise < 0 ? `−${body}` : body;
 }
 
@@ -47,4 +50,12 @@ export function paiseToInput(paise: number): string {
   const whole = Math.floor(paise / 100);
   const rest = paise % 100;
   return rest === 0 ? String(whole) : `${whole}.${String(rest).padStart(2, '0')}`;
+}
+
+/** What every masked amount reads while the eye toggle hides amounts. */
+export const HIDDEN_AMOUNT = '₹ •••••';
+
+/** `formatRupees`, or the mask when amounts are hidden. Percentages are never masked. */
+export function displayRupees(paise: number, hidden: boolean): string {
+  return hidden ? HIDDEN_AMOUNT : formatRupees(paise);
 }

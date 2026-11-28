@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { formatRupees, paiseToInput, parseRupeesToPaise } from './format.ts';
+import { displayRupees, formatRupees, HIDDEN_AMOUNT, paiseToInput, parseRupeesToPaise } from './format.ts';
 
 test('parseRupeesToPaise accepts up to 2 decimals', () => {
   assert.equal(parseRupeesToPaise('54.34'), 5434);
@@ -15,11 +15,13 @@ test('parseRupeesToPaise rejects extra decimals and extra dots', () => {
   }
 });
 
-test('formatRupees always shows 2 decimals with Indian grouping', () => {
-  assert.equal(formatRupees(10_000_000), '₹1,00,000.00');
+test('formatRupees: Indian grouping, decimals only when there are paise', () => {
+  assert.equal(formatRupees(10_610_400), '₹1,06,104');
+  assert.equal(formatRupees(8_310_400), '₹83,104');
   assert.equal(formatRupees(12050), '₹120.50');
-  assert.equal(formatRupees(0), '₹0.00');
-  assert.equal(formatRupees(-50000), '−₹500.00');
+  assert.equal(formatRupees(12005), '₹120.05');
+  assert.equal(formatRupees(0), '₹0');
+  assert.equal(formatRupees(-50000), '−₹500');
 });
 
 test('paiseToInput round-trips with parseRupeesToPaise', () => {
@@ -27,4 +29,10 @@ test('paiseToInput round-trips with parseRupeesToPaise', () => {
     assert.equal(parseRupeesToPaise(paiseToInput(p)), p);
   }
   assert.equal(paiseToInput(15000), '150');
+});
+
+test('displayRupees masks every amount the same way when hidden', () => {
+  assert.equal(displayRupees(8_310_400, false), '₹83,104');
+  assert.equal(displayRupees(8_310_400, true), HIDDEN_AMOUNT);
+  assert.equal(displayRupees(45000, true), displayRupees(-1, true));
 });

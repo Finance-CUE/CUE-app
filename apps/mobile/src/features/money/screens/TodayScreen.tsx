@@ -1,91 +1,150 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { type Href, useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
 import { useAuthStore } from '@/features/auth/store';
-import { CategoryIcon, ClockIcon, RupeeIcon, SwapIcon } from '../components/icons';
-import { Card, EmptyCard, Fab, Row, ScreenHeader, SectionHeader, useProfileAvatar } from '../components/ui';
-import { categoryLabel } from '../categories';
-import { daysUntil, formatDate, formatDateTime, greeting, toISODate, weekDays, weekStartBack } from '../dates';
-import { formatRupees } from '../format';
-import { useDeleteSpend, useDeleteSubscription, useDueSubscriptions, useSpends, useSubscriptions, useSummary, useToday } from '../hooks';
-import { EntryDetailSheet } from '../sheets/EntryDetailSheet';
-import { KhataSheet } from '../sheets/KhataSheet';
-import { LogSpendSheet } from '../sheets/LogSpendSheet';
-import { StartingMoneySheet } from '../sheets/StartingMoneySheet';
-import { SubscriptionPromptSheet } from '../sheets/SubscriptionPromptSheet';
-import { SubscriptionSheet } from '../sheets/SubscriptionSheet';
-import type { DueCycle, Spend } from '../types';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
+import { COLORS, FONT, HEADING_FONT, SHAPE, useDashboardTheme } from '@/features/money/palette';
+import { PlusIcon, RupeeIcon, SwapIcon } from '../components/icons';
+import { Fab } from '../components/ui';
+import { toISODate, weekDays, weekStartBack } from '../dates';
+import { useDues, useJars, useMonth, useNetWorth, useNetWorthHistory, useNote, useToday } from '../hooks';
+import { AskSheet } from '../insights/AskSheet';
+import { askAbout, draftTxn, insightsRoute } from '../insights/model';
+import type { AskDraft } from '../types';
+import { useJarFlows } from '../jars/useJarFlows';
+import { leftToSpendLine } from '../month/model';
+import { useRupees } from '../privacy';
+import { useDueFlows } from '../scheduled/useDueFlows';
+import { AddAccountSheet } from '../sheets/AddAccountSheet';
+import { useSharedFlows } from '../groups/useSharedFlows';
+import { AccountsCard } from '../today/AccountsCard';
+import { CashFlowCard } from '../today/CashFlowCard';
+import { GoalJarsCard } from '../today/GoalJarsCard';
+import { ComingUpCard } from '../today/ComingUpCard';
+import { helloLine, shortDay } from '../today/model';
+import { NetWorthCard } from '../today/NetWorthCard';
+import { NoteCard } from '../today/NoteCard';
+import { ThisMonthCard } from '../today/ThisMonthCard';
+import { MAX_WEEKS_AHEAD, PastDateBanner, TodayHeader } from '../today/TodayHeader';
+import { TodayTransactions } from '../transactions/TodayTransactions';
+import { useTxnFlows } from '../transactions/useTxnFlows';
 
-type SheetName = 'log' | 'khata' | 'sub' | 'start' | null;
-type Detail = { title: string; lines: string[]; onDelete: () => Promise<void>; onEdit?: () => void };
+type SheetName = 'addAccount' | null;
+/** Scrolled this far, the header collapses to a 56px bar (spec 4.1). */
+const COLLAPSE_AT = 150;
+/** Overdue dues are looked for this far back; Coming up looks 30 days ahead (spec 4.8). */
+const OVERDUE_DAYS = 90;
 
-const DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const BAR_MAX = 64;
-const LOAD_ERROR = 'Could not load. Pull to refresh.';
-const MAX_WEEKS_BACK = 52;
+const plusDays = (iso: string, n: number) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return toISODate(new Date(y, m - 1, d + n));
+};
 
-function weekTitle(weeksBack: number, monday: Date): string {
-  if (weeksBack === 0) return 'This week';
-  if (weeksBack === 1) return 'Last week';
-  return `Week of ${formatDate(toISODate(monday))}`;
-}
-
-function dueLabel(n: number): string {
-  if (n <= 0) return 'Due today';
-  if (n === 1) return 'Due tomorrow';
-  return `Due in ${n} days`;
-}
-
-const cycleKey = (c: DueCycle) => `${c.subscription_id}:${c.month}`;
-
-function Loading() {
-  const theme = useArchetypeTheme();
-  return <ActivityIndicator color={theme.accent} />;
-}
-
+/**
+ * Today (spec section 3): one scroll of blocks in the blueprint's order.
+ *  1 Header and date strip · 2 Net worth (with the shortcut row) · 3 This month
+ *  4 A note from CUE · 5 Your accounts · 6 Where your money moves
+ *  7 My Goal Jars · 8 Coming up · 9 Today's transactions
+ * The selected date changes daily activity only; balances always show today.
+ */
 export function TodayScreen() {
+  const formatRupees = useRupees();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
   const queryClient = useQueryClient();
   const fullName = useAuthStore((s) => s.user?.full_name)?.trim() ?? '';
   const [sheet, setSheet] = useState<SheetName>(null);
-  const [detail, setDetail] = useState<Detail | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  // Dismissing hides the cycles shown, for that day only. A cycle that comes due
-  // later still prompts, and a dismissed one comes back tomorrow or on the next launch.
-  const [dismissed, setDismissed] = useState<{ on: string; keys: string[] }>({ on: '', keys: [] });
 
   const now = useToday();
   const todayISO = toISODate(now);
-  // 0 = this week; earlier weeks let people look back and log what they missed.
+  // 0 = this week; positive = weeks back, negative = weeks ahead (future dates show dues).
   const [weeksBack, setWeeksBack] = useState(0);
   const monday = weekStartBack(now, weeksBack);
   const days = weekDays(monday);
-  const weekStart = toISODate(days[0]);
-  const weekEnd = toISODate(days[6]);
-  // null = the default day (today, or Sunday of a past week), so it follows midnight.
+  // null = the default day (today, Sunday of a past week, Monday of a future one), so it follows midnight.
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const selected = selectedDay ?? (weeksBack === 0 ? todayISO : weekEnd);
-  const [editing, setEditing] = useState<Spend | null>(null);
-  const changeWeek = (delta: number) => {
-    setWeeksBack((w) => Math.min(MAX_WEEKS_BACK, Math.max(0, w + delta)));
+  const selected = selectedDay ?? (weeksBack === 0 ? todayISO : toISODate(days[weeksBack > 0 ? 6 : 0]));
+  const changeWeek = (next: number) => {
+    setWeeksBack(next);
     setSelectedDay(null);
   };
+  const backToToday = () => {
+    setWeeksBack(0);
+    setSelectedDay(null);
+  };
+  const isToday = selected === todayISO;
+  const isFuture = selected > todayISO;
 
-  const summary = useSummary();
-  const spends = useSpends(weekStart, weekEnd);
-  const subs = useSubscriptions(todayISO);
-  const due = useDueSubscriptions(todayISO);
-  const dismissedKeys = dismissed.on === todayISO ? dismissed.keys : [];
-  const prompt = (due.data ?? []).filter((c) => !dismissedKeys.includes(cycleKey(c)));
-  const delSpend = useDeleteSpend();
-  const delSub = useDeleteSubscription();
+  // Net worth, its breakdown and the accounts card all read this one query.
+  const netWorth = useNetWorth(todayISO);
+  const accounts = netWorth.data?.accounts ?? [];
+  const byId = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+  const month = useMonth(todayISO);
+  const spark = useNetWorthHistory(todayISO, 30);
+  const dues = useDues(plusDays(todayISO, -OVERDUE_DAYS), plusDays(todayISO, 7 * MAX_WEEKS_AHEAD + 7), true);
+  const dueDates = useMemo(
+    () => new Set((dues.data ?? []).filter((o) => o.status === 'due' && o.kind !== 'income').map((o) => o.due_on)),
+    [dues.data],
+  );
 
+  const jars = useJars(todayISO);
+  const jarFlows = useJarFlows({ accounts, jars: jars.data?.jars ?? [] });
+  // The one-time "Reached" celebration, for a jar that hit its target since last time.
+  const celebrated = useRef(new Set<string>());
+  useEffect(() => {
+    const reached = (jars.data?.jars ?? []).find((j) => j.state === 'complete' && !j.celebrated && !celebrated.current.has(j.id));
+    if (reached) {
+      celebrated.current.add(reached.id);
+      jarFlows.celebrate(reached);
+    }
+  }, [jars.data, jarFlows]);
+  const dueFlows = useDueFlows({ accounts });
+  const shared = useSharedFlows({ accounts });
+  const note = useNote(todayISO);
+  // Ask CUE: from the header sparkle, Quick Add's chip, or a note (with its question).
+  const [asking, setAsking] = useState<{ query: string | null } | null>(null);
+  const openDraft = (d: AskDraft) => {
+    setAsking(null);
+    if (d.type === 'lend' || d.type === 'borrow') {
+      shared.openLend(d.type === 'lend' ? 'lent' : 'borrowed', {
+        person: d.person, amountPaise: d.amount_paise, accountId: d.account_id, occurredOn: d.occurred_on,
+      });
+      return;
+    }
+    flows.openDraft(draftTxn(d));
+  };
+  // Quick Add, a transaction's detail, Update balance and the Undo toast.
+  const flows = useTxnFlows({
+    accounts,
+    defaultDate: selected,
+    onLendBorrow: (direction) => shared.openLend(direction),
+    onGroupExpense: () => shared.openGroupExpense(null),
+    onSettlement: () => shared.openSettlement(null),
+    onAsk: () => setAsking({ query: null }),
+    onSubscription: () => dueFlows.openAdd(),
+    onGoalJar: () => jarFlows.openMove('add'),
+  });
+  const openQuick = flows.openQuick;
+
+  const scroll = useRef<ScrollView>(null);
+  const accountsY = useRef(0);
+  const [collapsed, setCollapsed] = useState(false);
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = e.nativeEvent.contentOffset.y > COLLAPSE_AT;
+    if (next !== collapsed) setCollapsed(next);
+  };
   const refresh = async () => {
     setRefreshing(true);
     try {
@@ -94,327 +153,187 @@ export function TodayScreen() {
       setRefreshing(false);
     }
   };
+  const close = () => setSheet(null);
 
-  const first = fullName.split(/\s+/)[0];
-  const avatar = useProfileAvatar();
-  const byDay = (iso: string) => (spends.data ?? []).filter((s) => s.spent_on === iso);
-  const total = (iso: string) => byDay(iso).reduce((sum, s) => sum + s.amount_paise, 0);
-  const totals = days.map((d) => total(toISODate(d)));
-  const weekMax = Math.max(...totals, 0);
-  const selIdx = Math.max(0, days.findIndex((d) => toISODate(d) === selected));
-  const selCount = byDay(selected).length;
-  const daySpends = byDay(selected);
-  const isToday = selected === todayISO;
-  const close = () => {
-    setSheet(null);
-    setEditing(null);
-  };
-  const nw = summary.data?.net_worth_paise ?? null;
-  const spentSince = summary.data?.spent_since_update_paise ?? 0;
-  const receivedSince = summary.data?.received_since_update_paise ?? 0;
-  const spendDetail = (s: Spend): Detail => ({
-    title: s.description,
-    lines: [
-      formatRupees(s.amount_paise),
-      categoryLabel(s.category),
-      formatDate(s.spent_on),
-      `Logged ${formatDateTime(s.created_at)}`,
-    ],
-    onDelete: async () => {
-      await delSpend.mutateAsync(s.id);
-    },
-    // Subscription payments are changed through the subscription, not here.
-    onEdit:
-      s.category === 'subscription'
-        ? undefined
-        : () => {
-            setDetail(null);
-            setEditing(s);
-            setSheet('log');
-          },
-  });
-  const active = (subs.data ?? []).filter((s) => s.active && s.next_billing_on);
-  const upcoming = active.filter((s) => daysUntil(s.next_billing_on ?? '', now) <= 7);
-  const later = active.filter((s) => !upcoming.includes(s));
-  const stopped = (subs.data ?? []).filter((s) => !s.active);
-  const subRow = (s: (typeof active)[number]) => {
-    const label = s.active ? dueLabel(daysUntil(s.next_billing_on ?? '', now)) : 'Stopped';
-    return (
-      <Row
-        key={s.id}
-        title={s.name}
-        subtitle={label}
-        amount={formatRupees(s.amount_paise)}
-        onPress={() =>
-          setDetail({
-            title: s.name,
-            lines: [formatRupees(s.amount_paise), `Billed on day ${s.billing_day} each month`, label],
-            onDelete: async () => {
-              await delSub.mutateAsync(s.id);
-            },
-          })
-        }
-      />
-    );
-  };
-
-  const tiles: { label: string; bg: string; icon: ReactNode; sheet: SheetName }[] = [
-    { label: 'Cash', bg: theme.tint, icon: <RupeeIcon color={theme.accentText} />, sheet: 'log' },
-    { label: 'Lend / Borrow', bg: COLORS.sageTint, icon: <SwapIcon color={COLORS.sage} />, sheet: 'khata' },
-    { label: 'Subscription', bg: COLORS.peachTint, icon: <ClockIcon color={COLORS.peach} />, sheet: 'sub' },
+  // Suggestion 20: the most common entries one tap from the top; the + stays for later.
+  const shortcuts: { label: string; icon: ReactNode; onPress: () => void }[] = [
+    { label: 'Expense', icon: <RupeeIcon color={theme.accentText} />, onPress: () => openQuick('expense') },
+    { label: 'Income', icon: <RupeeIcon color={theme.accentText} />, onPress: () => openQuick('income') },
+    { label: 'Transfer', icon: <SwapIcon color={theme.accentText} />, onPress: () => openQuick('transfer') },
+    { label: 'More', icon: <PlusIcon color={theme.accentText} />, onPress: () => openQuick(null) },
   ];
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScrollView
+        ref={scroll}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingTop: insets.top + 16, paddingHorizontal: 24, paddingBottom: 120, gap: 20 }}
+        contentContainerStyle={{
+          paddingTop: insets.top + 16,
+          paddingHorizontal: SHAPE.sidePadding,
+          // The FAB and the nav never cover the last card.
+          paddingBottom: 120,
+          gap: SHAPE.cardGap,
+        }}
         keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
-        <ScreenHeader
-          eyebrow={greeting(new Date()) /* needs the hour; useToday only tracks the day */}
-          title={first ? `Hi, ${first}` : 'Hi there'}
-          {...avatar}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.accent} colors={[theme.accent]} />}>
+        {/* 1. Header and date selector */}
+        <TodayHeader
+          today={now}
+          selected={selected}
+          weeksBack={weeksBack}
+          onSelect={setSelectedDay}
+          onWeeksBack={changeWeek}
+          onSearch={() => router.push('/transactions?search=1')}
+          dueDates={dueDates}
+          onAsk={() => setAsking({ query: null })}
         />
-        {theme.slug ? (
-          <Text style={{ marginTop: -10, fontSize: 15, fontStyle: 'italic', color: theme.accentText, fontFamily: HEADING_FONT }}>
-            {theme.question}
-          </Text>
-        ) : null}
+        {isToday ? null : <PastDateBanner selected={selected} onBack={backToToday} />}
 
-        <LinearGradient
-          colors={theme.gradient}
-          start={{ x: 0, y: 1 }}
-          end={{ x: 1, y: 0 }}
-          style={{ borderRadius: 22, padding: 20, gap: 10 }}>
-          {summary.isPending ? (
-            <ActivityIndicator color={theme.linkOnDeep} />
-          ) : summary.isError ? (
-            <Text style={{ color: theme.onDeep, fontSize: 14 }}>{LOAD_ERROR}</Text>
-          ) : (
-            <>
-              {nw === null ? null : (
-                <Text style={{ fontSize: 11, letterSpacing: 1.5, color: theme.onDeep }}>NET WORTH</Text>
-              )}
-              <Text style={{ fontSize: 24, color: COLORS.white, fontFamily: HEADING_FONT }}>
-                {nw === null ? 'Add your first financial details to see your full picture.' : formatRupees(nw)}
-              </Text>
-              {nw !== null && (spentSince > 0 || receivedSince > 0) ? (
-                <Text style={{ fontSize: 12, color: theme.onDeep }}>
-                  Since your last balance update:
-                  {spentSince > 0 ? ` ${formatRupees(spentSince)} spent` : ''}
-                  {spentSince > 0 && receivedSince > 0 ? ',' : ''}
-                  {receivedSince > 0 ? ` ${formatRupees(receivedSince)} received back` : ''}
-                </Text>
-              ) : null}
-              <TouchableOpacity accessibilityRole="button" onPress={() => setSheet('start')} activeOpacity={0.7}>
-                <Text style={{ color: theme.linkOnDeep, fontSize: 14, fontWeight: '600' }}>
-                  Update balance
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </LinearGradient>
-
-        <View style={{ gap: 12 }}>
-          <SectionHeader title="Quick add" />
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            {tiles.map((t) => (
-              <TouchableOpacity
-                key={t.label}
-                accessibilityRole="button"
-                onPress={() => setSheet(t.sheet)}
-                activeOpacity={0.7}
+        {/* 2. Net worth */}
+        <NetWorthCard
+          query={netWorth}
+          onBreakdown={() => router.push('/net-worth')}
+          onUpdateBalance={() => flows.openBalance(null)}
+          onAccounts={() => scroll.current?.scrollTo({ y: accountsY.current - 12, animated: true })}
+          onAddAccount={() => setSheet('addAccount')}
+          spark={spark.data?.points.map((p) => p.net_worth_paise)}
+          onSpark={() => router.push('/net-worth?days=30' as Href)}
+          leftToSpend={month.data ? leftToSpendLine(month.data, formatRupees) : null}
+        />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          {shortcuts.map((t) => (
+            <TouchableOpacity
+              key={t.label}
+              accessibilityRole="button"
+              accessibilityLabel={t.label === 'More' ? 'More ways to log' : `Log ${t.label.toLowerCase()}`}
+              onPress={t.onPress}
+              activeOpacity={0.7}
+              style={{ alignItems: 'center', gap: 6, minWidth: 64 }}>
+              <View
                 style={{
-                  flex: 1,
+                  width: 48,
+                  height: 48,
+                  borderRadius: 24,
+                  backgroundColor: theme.tint,
                   alignItems: 'center',
-                  gap: 8,
-                  paddingVertical: 14,
-                  paddingHorizontal: 4,
-                  borderRadius: 16,
-                  backgroundColor: COLORS.white,
-                  borderWidth: 1,
-                  borderColor: COLORS.cardBorder,
+                  justifyContent: 'center',
                 }}>
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    backgroundColor: t.bg,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                  {t.icon}
-                </View>
-                <Text style={{ fontSize: 12, color: COLORS.text, textAlign: 'center' }}>{t.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={{ gap: 12 }}>
-          <SectionHeader
-            title={weekTitle(weeksBack, monday)}
-            right={
-              <View style={{ flexDirection: 'row', gap: 4 }}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Previous week"
-                  accessibilityState={{ disabled: weeksBack >= MAX_WEEKS_BACK }}
-                  disabled={weeksBack >= MAX_WEEKS_BACK}
-                  onPress={() => changeWeek(1)}
-                  hitSlop={10}
-                  style={{ paddingHorizontal: 10, paddingVertical: 2 }}>
-                  <Text style={{ fontSize: 20, color: theme.accentText, fontWeight: '600' }}>‹</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Next week"
-                  accessibilityState={{ disabled: weeksBack === 0 }}
-                  disabled={weeksBack === 0}
-                  onPress={() => changeWeek(-1)}
-                  hitSlop={10}
-                  style={{ paddingHorizontal: 10, paddingVertical: 2, opacity: weeksBack === 0 ? 0.3 : 1 }}>
-                  <Text style={{ fontSize: 20, color: theme.accentText, fontWeight: '600' }}>›</Text>
-                </TouchableOpacity>
+                {t.icon}
               </View>
-            }
+              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: COLORS.text }}>{t.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* 3. This month */}
+        <View style={{ marginTop: 10 }}>
+          <ThisMonthCard
+            query={month}
+            onOpen={(key) => router.push(`/${key === 'dues' ? 'dues' : key}` as Href)}
+            onQuickAdd={(kind) => openQuick(kind)}
           />
-          <Card>
-            {spends.isPending ? (
-              <Loading />
-            ) : spends.isError ? (
-              <Text style={{ color: COLORS.muted, fontSize: 14 }}>{LOAD_ERROR}</Text>
-            ) : (
-              <>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {days.map((d, i) => {
-                    const iso = toISODate(d);
-                    const isToday = iso === todayISO;
-                    const future = iso > todayISO;
-                    const h = totals[i] > 0 ? Math.max(8, (totals[i] / weekMax) * BAR_MAX) : 4;
-                    return (
-                      <TouchableOpacity
-                        key={iso}
-                        accessibilityRole="button"
-                        accessibilityLabel={DAY[i]}
-                        disabled={future}
-                        onPress={() => setSelectedDay(iso)}
-                        activeOpacity={0.7}
-                        style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6, height: BAR_MAX + 24 }}>
-                        <View
-                          style={{
-                            width: 14,
-                            height: h,
-                            borderRadius: 7,
-                            backgroundColor: totals[i] > 0 || isToday ? theme.accent : COLORS.track,
-                          }}
-                        />
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            color: iso === selected ? COLORS.text : COLORS.muted,
-                            fontWeight: isToday || iso === selected ? '700' : '400',
-                          }}>
-                          {DAY[i]}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <Text style={{ fontSize: 13, color: COLORS.muted, marginTop: 12 }}>
-                  {DAY[selIdx]} · {formatRupees(totals[selIdx])} {selCount ? `${selCount} logged` : 'Nothing logged'}
-                </Text>
-              </>
-            )}
-          </Card>
         </View>
 
-        <View style={{ gap: 12 }}>
-          <SectionHeader
-            title={isToday ? 'Today' : formatDate(selected)}
-            right={<Text style={{ fontSize: 14, color: COLORS.muted }}>{formatRupees(total(selected))} spent</Text>}
+        {/* 4. A note from CUE (moved up, decided 16 Nov) */}
+        <NoteCard
+          query={note}
+          onInsights={(n) => router.push(insightsRoute(n) as Href)}
+          onAsk={(n) => setAsking({ query: n ? askAbout(n) : null })}
+        />
+
+        {/* 5. Your accounts */}
+        <View onLayout={(e) => (accountsY.current = e.nativeEvent.layout.y)}>
+          <AccountsCard
+            query={netWorth}
+            onAdd={() => setSheet('addAccount')}
+            onOpen={(a) => router.push(`/account/${a.id}`)}
           />
-          {spends.isPending ? (
-            <Card>
-              <Loading />
-            </Card>
-          ) : spends.isError ? (
-            <EmptyCard text={LOAD_ERROR} />
-          ) : daySpends.length === 0 ? (
-            <EmptyCard text={isToday ? 'Nothing logged yet.' : 'Nothing logged on this day. Tap + to add a spend for it.'} />
-          ) : (
-            <Card style={{ paddingVertical: 6 }}>
-              {daySpends.map((s) => (
-                <Row
-                  key={s.id}
-                  left={<CategoryIcon category={s.category} color={theme.accentText} />}
-                  title={s.description}
-                  subtitle={categoryLabel(s.category)}
-                  amount={formatRupees(s.amount_paise)}
-                  onPress={() => setDetail(spendDetail(s))}
-                />
-              ))}
-            </Card>
-          )}
         </View>
 
-        <View style={{ gap: 12 }}>
-          <SectionHeader title="Upcoming" />
-          {subs.isPending ? (
-            <Card>
-              <Loading />
-            </Card>
-          ) : subs.isError ? (
-            <EmptyCard text={LOAD_ERROR} />
-          ) : upcoming.length === 0 ? (
-            <EmptyCard text="Nothing due in the next 7 days." />
-          ) : (
-            <Card style={{ paddingVertical: 6 }}>{upcoming.map(subRow)}</Card>
-          )}
-        </View>
+        {/* 6. Where your money moves */}
+        <CashFlowCard
+          selected={selected}
+          today={todayISO}
+          onView={(b) => router.push(`/transactions?start=${b.start}&end=${b.end}` as Href)}
+        />
 
-        {later.length > 0 ? (
-          <View style={{ gap: 12 }}>
-            <SectionHeader title="Active subscriptions" />
-            <Card style={{ paddingVertical: 6 }}>{later.map(subRow)}</Card>
-          </View>
-        ) : null}
+        {/* 7. My Goal Jars */}
+        <GoalJarsCard
+          query={jars}
+          onOpen={(j) => router.push(`/jar/${j.id}` as Href)}
+          onCreate={jarFlows.openCreate}
+          onViewAll={() => router.push('/jars' as Href)}
+        />
 
-        {stopped.length > 0 ? (
-          <View style={{ gap: 12 }}>
-            <SectionHeader title="Stopped" />
-            <Card style={{ paddingVertical: 6 }}>{stopped.map(subRow)}</Card>
-          </View>
-        ) : null}
+        {/* 8. Coming up */}
+        <ComingUpCard
+          query={dues}
+          today={todayISO}
+          selected={selected}
+          accounts={byId}
+          onOpen={dueFlows.openDetail}
+          onPay={dueFlows.openPay}
+          onSkip={dueFlows.skip}
+          onCalendar={dueFlows.openCalendar}
+          onAdd={() => dueFlows.openAdd()}
+          onViewAll={() => router.push('/dues' as Href)}
+        />
+
+        {/* 9. Today's (or the selected day's) transactions; a future day has none. */}
+        {isFuture ? null : (
+          <TodayTransactions
+            day={selected}
+            isToday={isToday}
+            accounts={accounts}
+            onOpen={flows.openTxn}
+            onLongPress={flows.fixCategory}
+            onAdd={() => openQuick(null)}
+            onViewAll={() => router.push('/transactions')}
+          />
+        )}
       </ScrollView>
 
-      <Fab onPress={() => setSheet('log')} />
+      {collapsed ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            paddingTop: insets.top,
+            backgroundColor: COLORS.background,
+            borderBottomWidth: 1,
+            borderBottomColor: COLORS.cardBorder,
+          }}>
+          <View
+            style={{
+              height: 56,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: SHAPE.sidePadding,
+            }}>
+            <Text style={{ fontSize: 17, color: COLORS.text, fontFamily: HEADING_FONT }}>{helloLine(fullName)}</Text>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.muted }}>{isToday ? 'Today' : shortDay(selected)}</Text>
+          </View>
+          {isToday ? null : (
+            <View style={{ paddingBottom: 8 }}>
+              <PastDateBanner selected={selected} onBack={backToToday} />
+            </View>
+          )}
+        </View>
+      ) : null}
 
-      <LogSpendSheet visible={sheet === 'log'} onClose={close} editing={editing} defaultDate={selected} />
-      <KhataSheet visible={sheet === 'khata'} onClose={close} />
-      <SubscriptionSheet visible={sheet === 'sub'} onClose={close} />
-      <SubscriptionPromptSheet
-        // iOS may not present two RN Modals at once, so the prompt waits for the others.
-        due={sheet || detail ? [] : prompt}
-        currentMonth={`${todayISO.slice(0, 8)}01`}
-        onClose={() => setDismissed({ on: todayISO, keys: [...dismissedKeys, ...prompt.map(cycleKey)] })}
-      />
-      <StartingMoneySheet
-        visible={sheet === 'start'}
-        onClose={close}
-        initial={summary.data?.starting_money ?? null}
-        balanceNow={summary.data?.balance_paise ?? null}
-      />
-      <EntryDetailSheet
-        visible={detail !== null}
-        onClose={() => setDetail(null)}
-        title={detail?.title ?? ''}
-        lines={detail?.lines ?? []}
-        onDelete={detail?.onDelete ?? (async () => {})}
-        onEdit={detail?.onEdit}
-      />
+      <Fab onPress={() => openQuick(null)} accessibilityLabel="Log something" />
+      <AddAccountSheet visible={sheet === 'addAccount'} onClose={close} />
+      {flows.elements}
+      {dueFlows.elements}
+      {jarFlows.elements}
+      {shared.elements}
+      <AskSheet visible={asking !== null} initialQuery={asking?.query ?? null} onClose={() => setAsking(null)} onDraft={openDraft} />
     </View>
   );
 }

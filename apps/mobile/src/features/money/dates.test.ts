@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { daysBefore, deviceTimeZone, formatDate, formatDateTime, spendDateProblem, toDisplayDate, toISODate, weekStartBack } from './dates.ts';
+import { daysBefore, deviceTimeZone, formatDate, formatDateTime, greeting, spendDateProblem, toDisplayDate, toISODate, weekStartBack } from './dates.ts';
 
 process.env.TZ = 'Asia/Kolkata';
 
@@ -37,4 +37,15 @@ test('weekStartBack steps whole weeks from this Monday', () => {
   const sat = new Date(2026, 10, 14); // Saturday
   assert.equal(toISODate(weekStartBack(sat, 0)), '2026-11-09');
   assert.equal(toISODate(weekStartBack(sat, 2)), '2026-10-26');
+});
+
+test('greeting follows the spec bands: morning 05–11:59, afternoon 12–16:59, evening 17–04:59', () => {
+  const at = (h: number, m = 0) => greeting(new Date(2026, 10, 17, h, m));
+  assert.equal(at(4, 59), 'Good evening');
+  assert.equal(at(5), 'Good morning');
+  assert.equal(at(11, 59), 'Good morning');
+  assert.equal(at(12), 'Good afternoon');
+  assert.equal(at(16, 59), 'Good afternoon');
+  assert.equal(at(17), 'Good evening');
+  assert.equal(at(0), 'Good evening');
 });

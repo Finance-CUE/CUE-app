@@ -9,25 +9,16 @@ Never log request or response bodies: they hold the user's money.
 import logging
 import re
 import uuid
-from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
 
 from app.core.config import Settings
 from app.features.money.schemas import (
-    BalanceSnapshot,
-    Credit,
-    KhataCreate,
     KhataEntry,
     NudgeTemplate,
     Nudges,
     NudgesPut,
-    Spend,
-    SpendCreate,
-    SpendUpdate,
-    StartingMoney,
-    StartingMoneyPut,
     Subscription,
     SubscriptionCreate,
 )
@@ -137,103 +128,8 @@ class MoneyRepository:
         )
         return bool(rows)
 
-    # Spends ------------------------------------------------------------------
-
-    async def add_spend(self, user_id: str, data: SpendCreate) -> Spend:
-        # billing_day belongs to subscriptions, not the spends table.
-        body = data.model_dump(mode="json", exclude={"billing_day"})
-        return Spend(**await self._insert("spends", user_id, body))
-
-    async def list_spends(self, user_id: str, start: date, end: date) -> list[Spend]:
-        rows = await self._list(
-            "spends",
-            user_id,
-            "spent_on.desc,created_at.desc",
-            **{"and": f"(spent_on.gte.{start.isoformat()},spent_on.lte.{end.isoformat()})"},
-        )
-        return [Spend(**row) for row in rows]
-
-    async def update_spend(self, user_id: str, spend_id: str, data: SpendUpdate) -> Spend | None:
-        """None when the spend is missing, not the user's, or a subscription payment."""
-        rows = await self._request(
-            "PATCH",
-            "spends",
-            params={
-                "id": f"eq.{_uid(spend_id)}",
-                "user_id": f"eq.{_uid(user_id)}",
-                "category": "neq.subscription",
-            },
-            json=data.model_dump(mode="json"),
-            prefer=_REP,
-        )
-        return Spend(**rows[0]) if rows else None
-
-    async def sum_spends_logged_after(self, user_id: str, after: datetime) -> int:
-        rows = await self._get_all(
-            "spends",
-            {
-                "user_id": f"eq.{_uid(user_id)}",
-                "created_at": f"gt.{after.isoformat()}",
-                "select": "id,amount_paise",
-                "order": "id.asc",
-            },
-        )
-        return sum(int(r["amount_paise"]) for r in rows)
-
-    async def delete_spend(self, user_id: str, spend_id: str) -> bool:
-        return await self._delete("spends", user_id, spend_id)
-
-    async def add_subscription_spend(self, user_id: str, data: SpendCreate) -> Spend:
-        row = await self._request(
-            "POST",
-            "rpc/log_subscription_spend",
-            json={
-                "p_user": _uid(user_id),
-                "p_description": data.description,
-                "p_amount": data.amount_paise,
-                "p_spent_on": data.spent_on.isoformat(),
-                "p_billing_day": data.billing_day,
-            },
-        )
-        if not row:
-            raise MoneyStoreError("Money service returned no row.")
-        return Spend(**(row[0] if isinstance(row, list) else row))
-
-    # Starting money ----------------------------------------------------------
-
-    async def get_starting_money(self, user_id: str) -> StartingMoney | None:
-        rows = await self._request(
-            "GET",
-            "starting_money",
-            params={"user_id": f"eq.{_uid(user_id)}", "select": "bank_paise,cash_paise,set_at"},
-        )
-        return StartingMoney(**rows[0]) if rows else None
-
-    async def put_starting_money(self, user_id: str, data: StartingMoneyPut) -> StartingMoney:
-        uid = _uid(user_id)
-        amounts = data.model_dump()
-        if not await self.get_starting_money(uid):
-            # First save: set_at comes from the column default (now). A concurrent
-            # first save loses the insert race silently, then both just PATCH.
-            await self._request(
-                "POST",
-                "starting_money",
-                params={"on_conflict": "user_id"},
-                json={**amounts, "user_id": uid},
-                prefer="resolution=ignore-duplicates,return=minimal",
-            )
-        # Every save restamps set_at: the typed amounts are the balance as of now,
-        # and spends logged after this moment come off it (see net_worth).
-        rows = await self._request(
-            "PATCH",
-            "starting_money",
-            params={"user_id": f"eq.{uid}"},
-            json={**amounts, "set_at": datetime.now(UTC).isoformat()},
-            prefer=_REP,
-        )
-        if not rows:
-            raise MoneyStoreError("Money service returned no row.")
-        return StartingMoney(**rows[0])
+    # Spends, starting money, settling Khata and subscription payments live on
+    # the ledger: see ledger_repository.py.
 
     # Khata -------------------------------------------------------------------
 
@@ -241,46 +137,18 @@ class MoneyRepository:
         rows = await self._list("khata_entries", user_id, "created_at.desc", settled_at="is.null")
         return [KhataEntry(**row) for row in rows]
 
-    async def add_khata(self, user_id: str, data: KhataCreate) -> KhataEntry:
-        return KhataEntry(**await self._insert("khata_entries", user_id, data.model_dump()))
-
-    async def settle_khata(self, user_id: str, entry_id: str) -> KhataEntry | None:
-        """The entry just settled, or None when it is missing, not the user's or already settled."""
-        rows = await self._request(
-            "PATCH",
-            "khata_entries",
-            params={
-                "id": f"eq.{_uid(entry_id)}",
-                "user_id": f"eq.{_uid(user_id)}",
-                "settled_at": "is.null",
-                "select": "id,direction,person,amount_paise,note,created_at",
-            },
-            json={"settled_at": datetime.now(UTC).isoformat()},
-            prefer=_REP,
-        )
-        return KhataEntry(**rows[0]) if rows else None
-
-    async def list_received_after(self, user_id: str, after: datetime) -> list[Credit]:
-        """Lent entries marked settled after `after`: money that came back to the user."""
-        rows = await self._get_all(
-            "khata_entries",
-            {
-                "user_id": f"eq.{_uid(user_id)}",
-                "direction": "eq.lent",
-                "settled_at": f"gt.{after.isoformat()}",
-                "select": "id,amount_paise,settled_at",
-                "order": "id.asc",
-            },
-        )
-        return [Credit(amount_paise=int(r["amount_paise"]), at=r["settled_at"]) for r in rows]
-
     async def delete_khata(self, user_id: str, entry_id: str) -> bool:
+        """Deleting the person record also deletes its ledger entries (cascade)."""
         return await self._delete("khata_entries", user_id, entry_id)
 
     # Subscriptions -----------------------------------------------------------
 
     async def list_subscriptions(self, user_id: str) -> list[Subscription]:
-        rows = await self._list("subscriptions", user_id, "created_at.asc")
+        """Monthly subscriptions only: the old routes know nothing of bills,
+        income or other frequencies (sql/012)."""
+        rows = await self._list(
+            "subscriptions", user_id, "created_at.asc", kind="eq.subscription", frequency="eq.monthly"
+        )
         return [Subscription(**row) for row in rows]
 
     async def add_subscription(self, user_id: str, data: SubscriptionCreate) -> Subscription:
@@ -290,39 +158,7 @@ class MoneyRepository:
     async def delete_subscription(self, user_id: str, sub_id: str) -> bool:
         return await self._delete("subscriptions", user_id, sub_id)
 
-    async def answer_cycle(self, user_id: str, sub_id: str, month: date, active: bool) -> bool:
-        """False when the subscription is not the user's; a repeat answer is a no-op (True)."""
-        result = await self._request(
-            "POST",
-            "rpc/answer_subscription_cycle",
-            json={
-                "p_user": _uid(user_id),
-                "p_subscription": _uid(sub_id),
-                "p_month": month.isoformat(),
-                "p_active": active,
-            },
-        )
-        return result is True
-
-    async def list_cycle_months(self, user_id: str) -> dict[str, set[date]]:
-        rows = await self._get_all(
-            "subscription_cycles",
-            {
-                "user_id": f"eq.{_uid(user_id)}",
-                "select": "subscription_id,month",
-                "order": "id.asc",
-            },
-        )
-        months: dict[str, set[date]] = {}
-        for row in rows:
-            months.setdefault(row["subscription_id"], set()).add(date.fromisoformat(row["month"]))
-        return months
-
-    # Balance history and notification templates -------------------------------
-
-    async def list_balance_history(self, user_id: str) -> list[BalanceSnapshot]:
-        rows = await self._list("balance_history", user_id, "recorded_at.asc")
-        return [BalanceSnapshot(**row) for row in rows]
+    # Notification templates ---------------------------------------------------
 
     async def list_templates(self, archetypes: list[str]) -> list[NudgeTemplate]:
         # Slugs go into a PostgREST filter; refuse anything that could alter it.

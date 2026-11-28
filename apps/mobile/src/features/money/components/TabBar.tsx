@@ -2,9 +2,8 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
 
-import { COLORS } from '@/features/assessment/theme';
+import { bgAt, COLORS, FONT, useDashboardTheme } from '@/features/money/palette';
 import { InsightsIcon, KhataIcon, TodayIcon, YouIcon } from './icons';
-import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 const ICONS = { today: TodayIcon, insights: InsightsIcon, khata: KhataIcon, you: YouIcon };
 const LABELS = { today: 'Today', insights: 'Insights', khata: 'Khata', you: 'You' };
@@ -12,19 +11,19 @@ type TabName = keyof typeof ICONS;
 
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const theme = useArchetypeTheme();
+  const theme = useDashboardTheme();
 
   return (
     <View
       style={{
         flexDirection: 'row',
-        backgroundColor: COLORS.card,
+        // Spec: bg at 92% opacity. No blur library is installed, so the tint carries it.
+        backgroundColor: bgAt(0.92),
         borderTopWidth: 1,
         borderTopColor: COLORS.cardBorder,
         paddingTop: 8,
         paddingHorizontal: 12,
-        paddingBottom: Math.max(insets.bottom, 8),
-      }}>
+        paddingBottom: Math.max(insets.bottom, 8) }}>
       {state.routes.map((route, index) => {
         const name = route.name as TabName;
         const Icon = ICONS[name];
@@ -47,7 +46,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
               onPress={onPress}
               style={[styles.pill, focused ? { backgroundColor: theme.tint } : null]}>
               <Icon color={color} />
-              <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 11, fontWeight: focused ? '600' : '500', color }}>{LABELS[name]}</Text>
+              <Text maxFontSizeMultiplier={1.4} style={{ fontFamily: focused ? FONT.semibold : FONT.medium, fontSize: 11, color }}>{LABELS[name]}</Text>
             </TouchableOpacity>
           </View>
         );

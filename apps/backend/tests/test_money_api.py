@@ -13,22 +13,11 @@ from fastapi.testclient import TestClient
 from app.api.dependencies.auth import get_current_claims
 from app.features.assessment.router import get_assessment_repo
 from app.features.auth.router import limiter
-from app.features.money.repository import MoneyConflictError, MoneyStoreError
+from app.features.money.repository import MoneyStoreError
 from app.features.money.router import get_money_repo
-from app.features.money.schemas import (
-    BalanceSnapshot,
-    Credit,
-    KhataEntry,
-    NudgeTemplate,
-    Nudges,
-    Spend,
-    SpendCreate,
-    StartingMoney,
-    Subscription,
-    SubscriptionCreate,
-)
-from app.features.money.service import billing_date
+from app.features.money.schemas import Nudges
 from app.main import app
+from tests.fakes import FakeMoney, key, now
 
 USER_A = "11111111-1111-4111-8111-111111111111"
 USER_B = "22222222-2222-4222-8222-222222222222"
@@ -41,183 +30,11 @@ IST = ZoneInfo("Asia/Kolkata")
 SPEND = {"description": "Chai", "amount_paise": 2000, "category": "food", "spent_on": "2026-10-24"}
 
 
-_LAST = [datetime.now(UTC)]
-
-
-def _now() -> datetime:
-    _LAST[0] = max(datetime.now(UTC), _LAST[0] + timedelta(microseconds=1))
-    return _LAST[0]
-
-
-class FakeRepo:
-    def __init__(self) -> None:
-        self.spends: dict[str, list[Spend]] = {}
-        self.starting: dict[str, StartingMoney] = {}
-        self.khata: dict[str, list[KhataEntry]] = {}
-        self.settled: dict[str, datetime] = {}
-        self.subs: dict[str, list[Subscription]] = {}
-        self.cycles: dict[str, dict[str, set[date]]] = {}
-        self.history: dict[str, list[BalanceSnapshot]] = {}
-        self.nudges: dict[str, Nudges] = {}
-        self.list_calls: list[tuple] = []
-        self.template_calls: list[list[str]] = []
-        self.templates_fail = False
-
-    @staticmethod
-    def _drop(rows: list, entity_id: str) -> bool:
-        for row in rows:
-            if row.id == entity_id:
-                rows.remove(row)
-                return True
-        return False
-
-    async def add_spend(self, user_id, data):
-        spend = Spend(
-            id=str(uuid.uuid4()), created_at=_now(), **data.model_dump(exclude={"billing_day"})
-        )
-        self.spends.setdefault(user_id, []).append(spend)
-        return spend
-
-    async def add_subscription_spend(self, user_id, data):
-        spend = await self.add_spend(user_id, data)
-        name = data.description.strip().lower()
-        sub = next(
-            (s for s in self.subs.get(user_id, []) if s.active and s.name.lower() == name), None
-        )
-        if sub is None:
-            sub = await self.add_subscription(
-                user_id,
-                SubscriptionCreate(
-                    name=data.description, amount_paise=data.amount_paise,
-                    billing_day=data.billing_day, starts_on=data.spent_on,
-                ),  # fmt: skip
-            )
-        else:
-            sub.amount_paise, sub.billing_day = data.amount_paise, data.billing_day
-        self.cycles.setdefault(user_id, {}).setdefault(sub.id, set()).add(
-            data.spent_on.replace(day=1)
-        )
-        return spend
-
-    async def list_spends(self, user_id, start, end):
-        self.list_calls.append((user_id, start, end))
-        return [s for s in self.spends.get(user_id, []) if start <= s.spent_on <= end]
-
-    async def delete_spend(self, user_id, spend_id):
-        return self._drop(self.spends.get(user_id, []), spend_id)
-
-    async def update_spend(self, user_id, spend_id, data):
-        rows = self.spends.get(user_id, [])
-        for i, row in enumerate(rows):
-            if row.id == spend_id and row.category != "subscription":
-                rows[i] = row.model_copy(update=data.model_dump())
-                return rows[i]
-        return None
-
-    async def sum_spends_logged_after(self, user_id, after):
-        return sum(s.amount_paise for s in self.spends.get(user_id, []) if s.created_at > after)
-
-    async def get_starting_money(self, user_id):
-        return self.starting.get(user_id)
-
-    async def put_starting_money(self, user_id, data):
-        old = self.starting.get(user_id)
-        row = StartingMoney(set_at=_now(), **data.model_dump())
-        self.starting[user_id] = row
-        self.history.setdefault(user_id, []).append(
-            BalanceSnapshot(recorded_at=_now(), **data.model_dump())
-        )
-        return row
-
-    async def list_open_khata(self, user_id):
-        return [k for k in self.khata.get(user_id, []) if k.id not in self.settled]
-
-    async def add_khata(self, user_id, data):
-        entry = KhataEntry(id=str(uuid.uuid4()), created_at=_now(), **data.model_dump())
-        self.khata.setdefault(user_id, []).append(entry)
-        return entry
-
-    async def settle_khata(self, user_id, entry_id):
-        for k in await self.list_open_khata(user_id):
-            if k.id == entry_id:
-                self.settled[entry_id] = _now()
-                return k
-        return None
-
-    async def list_received_after(self, user_id, after):
-        return [
-            Credit(amount_paise=k.amount_paise, at=self.settled[k.id])
-            for k in self.khata.get(user_id, [])
-            if k.direction == "lent" and k.id in self.settled and self.settled[k.id] > after
-        ]
-
-    async def delete_khata(self, user_id, entry_id):
-        return self._drop(self.khata.get(user_id, []), entry_id)
-
-    async def list_subscriptions(self, user_id):
-        return list(self.subs.get(user_id, []))
-
-    async def add_subscription(self, user_id, data):
-        name = data.name.strip().lower()
-        if any(s.active and s.name.lower() == name for s in self.subs.get(user_id, [])):
-            raise MoneyConflictError("Subscription exists.")
-        sub = Subscription(id=str(uuid.uuid4()), created_at=_now(), active=True, **data.model_dump())
-        self.subs.setdefault(user_id, []).append(sub)
-        return sub
-
-    async def delete_subscription(self, user_id, sub_id):
-        return self._drop(self.subs.get(user_id, []), sub_id)
-
-    async def answer_cycle(self, user_id, sub_id, month, active):
-        sub = next((x for x in self.subs.get(user_id, []) if x.id == sub_id), None)
-        if sub is None:
-            return False
-        if not sub.active or month < sub.starts_on.replace(day=1):
-            return True
-        months = self.cycles.setdefault(user_id, {}).setdefault(sub_id, set())
-        if month in months:
-            return True
-        months.add(month)
-        if active:
-            await self.add_spend(
-                user_id,
-                SpendCreate(
-                    description=sub.name, amount_paise=sub.amount_paise,
-                    category="subscription", spent_on=billing_date(month, sub.billing_day),
-                    billing_day=sub.billing_day,
-                ),  # fmt: skip
-            )
-        else:
-            sub.active = False
-        return True
-
-    async def list_cycle_months(self, user_id):
-        return {k: set(v) for k, v in self.cycles.get(user_id, {}).items()}
-
-    async def list_balance_history(self, user_id):
-        return list(self.history.get(user_id, []))
-
-    async def list_templates(self, archetypes):
-        self.template_calls.append(archetypes)
-        if self.templates_fail:
-            raise MoneyStoreError("Money service unavailable.")
-        return [
-            NudgeTemplate(
-                archetype="default", kind="pattern", title="{label} again",
-                body="{count} times, {total} in all.",
-            )  # fmt: skip
-        ]
-
-    async def get_nudges(self, user_id):
-        return self.nudges.get(user_id, Nudges(pre_spend=True, patterns=True, weekly=True))
-
-    async def put_nudges(self, user_id, data):
-        self.nudges[user_id] = Nudges(**data.model_dump())
-        return self.nudges[user_id]
+FakeRepo = FakeMoney
 
 
 class BrokenRepo:
-    async def list_spends(self, user_id, start, end):
+    async def list_transactions(self, user_id, start=None, end=None, include_deleted=False):
         raise MoneyStoreError("Money service unavailable.")
 
 
@@ -308,9 +125,8 @@ def test_user_b_cannot_delete_or_settle_user_a_rows():
         assert c.get(f"{BASE}/summary").json()["net_worth_paise"] == 100
         assert c.post(f"{BASE}/khata/{khata_id}/settle").status_code == 404
         assert c.delete(f"{BASE}/khata/{khata_id}").status_code == 404
-    assert len(repo.spends[USER_A]) == 1
+    assert len(repo.live(USER_A, "expense")) == 1
     assert len(repo.khata[USER_A]) == 1 and not repo.settled
-    assert len(repo.spends[USER_A]) == 1
 
 
 def test_summary_null_net_worth_until_starting_money_set():
@@ -321,36 +137,45 @@ def test_summary_null_net_worth_until_starting_money_set():
         assert before["owed_to_you_paise"] == 0 and before["you_owe_paise"] == 0
 
 
-def test_net_worth_takes_off_spends_logged_after_the_balance_was_set():
+TODAY = datetime.now(IST).date().isoformat()
+
+
+def test_net_worth_follows_the_ledger():
     with _client(FakeRepo()) as c:
-        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 999})  # before: already in balance
+        # Dated before the balance was set: already inside it ("Balance on").
+        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 999})
         c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 50})
-        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 300})
+        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 300, "spent_on": TODAY})
+        # Lending moves cash out and adds a receivable; borrowing the reverse.
         c.post(f"{BASE}/khata", json={"direction": "lent", "person": "A", "amount_paise": 400})
         c.post(f"{BASE}/khata", json={"direction": "borrowed", "person": "B", "amount_paise": 100})
         s = c.get(f"{BASE}/summary").json()
-        # Updating the balance again resets the reference point.
         c.put(f"{BASE}/starting-money", json={"bank_paise": 700, "cash_paise": 50})
         after = c.get(f"{BASE}/summary").json()
-    # Open Khata entries are records only: they never move net worth.
-    assert s["net_worth_paise"] == 1000 + 50 - 300
-    assert s["spent_since_update_paise"] == 300
+    # Bank 1000 − 300; cash 50 − 400 + 100; plus 400 owed to you, less 100 you owe.
+    assert s["starting_money"]["bank_paise"] == 700
+    assert s["starting_money"]["cash_paise"] == -250
+    assert s["balance_paise"] == 450
     assert (s["owed_to_you_paise"], s["you_owe_paise"]) == (400, 100)
-    assert after["net_worth_paise"] == 700 + 50
-    assert after["spent_since_update_paise"] == 0
+    assert s["net_worth_paise"] == 1000 + 50 - 300  # lending and borrowing don't change it
+    assert s["spent_since_update_paise"] == 0 and s["received_since_update_paise"] == 0
+    # Typing 50 cash again is a +300 adjustment on Cash; bank already matched.
+    assert after["starting_money"]["cash_paise"] == 50
+    assert after["net_worth_paise"] == 700 + 50 + 400 - 100
 
 
-def test_net_worth_measures_from_the_latest_balance_snapshot_for_older_rows():
-    # Rows saved before set_at was restamped: set_at is old, history has the update.
+def test_updating_the_balance_adds_dated_adjustments_not_new_openings():
     repo = FakeRepo()
     with _client(repo) as c:
         c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
-        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 300})
-        c.put(f"{BASE}/starting-money", json={"bank_paise": 700, "cash_paise": 0})
-        old = repo.starting[USER_A]
-        repo.starting[USER_A] = old.model_copy(update={"set_at": old.set_at - timedelta(days=30)})
+        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 300, "spent_on": TODAY})
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 900, "cash_paise": 0})
         s = c.get(f"{BASE}/summary").json()
-    assert s["net_worth_paise"] == 700 and s["spent_since_update_paise"] == 0
+    assert [a["name"] for a in repo.accounts] == ["Bank", "Cash"]
+    assert len(repo.live(USER_A, "opening")) == 2
+    [adj] = repo.live(USER_A, "adjustment")
+    assert adj["amount_paise"] == 200 and adj["reason"] == "Balance updated"
+    assert s["net_worth_paise"] == 900
 
 
 def test_edit_spend_changes_fields_and_refuses_subscription_payments():
@@ -438,8 +263,19 @@ def test_due_subscriptions_then_answer_yes_logs_once():
         left = _due(c)
     assert (first.status_code, again.status_code) == (204, 204)
     assert [d["month"] for d in left] == ["2026-10-01"]
-    logged = [s for s in repo.spends[USER_A] if s.category == "subscription"]
-    assert len(logged) == 1 and logged[0].amount_paise == 19900
+    logged = [t for t in repo.live(USER_A, "expense") if t["category"] == "subscriptions"]
+    assert len(logged) == 1 and logged[0]["amount_paise"] == 19900
+
+
+def test_deleting_a_logged_payment_reopens_its_month():
+    repo = FakeRepo()
+    with _client(repo) as c:
+        sub_id = c.post(f"{BASE}/subscriptions", json=_sub(day=10, starts="2026-08-20")).json()["id"]
+        c.post(f"{BASE}/subscriptions/{sub_id}/cycles", json={"month": "2026-09-01", "active": True})
+        [paid] = repo.live(USER_A, "expense")
+        assert c.delete(f"{BASE}/spends/{paid['id']}").status_code == 204
+        due = _due(c)
+    assert [d["month"] for d in due] == ["2026-09-01", "2026-10-01"]
 
 
 def test_answer_no_deactivates_and_stops_prompting():
@@ -450,7 +286,7 @@ def test_answer_no_deactivates_and_stops_prompting():
         r = c.post(f"{BASE}/subscriptions/{sub_id}/cycles", json=no)
         due = _due(c)
     assert r.status_code == 204 and due == []
-    assert not repo.spends.get(USER_A)
+    assert not repo.live(USER_A, "expense")
 
 
 def test_answer_cycle_404_for_other_user_and_422_for_bad_month():
@@ -463,7 +299,7 @@ def test_answer_cycle_404_for_other_user_and_422_for_bad_month():
     with _client(repo, USER_A) as c:
         bad = c.post(f"{BASE}/subscriptions/{sub_id}/cycles", json={**body, "month": "2026-09-02"})
     assert bad.status_code == 422
-    assert not repo.spends.get(USER_A)
+    assert not repo.live(USER_A, "expense")
 
 
 def test_trend_is_30_points_ending_today_with_carry_forward():
@@ -487,9 +323,14 @@ def test_invalid_tz_is_422(path):
         assert c.get(f"{PROFILE}/{path}", params={**params, "tz": "../x"}).status_code == 422
 
 
-def test_settling_lent_money_puts_it_back_in_the_balance():
-    with _client(FakeRepo()) as c:
-        c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
+def _account_id(repo, name):
+    return next(a["id"] for a in repo.accounts if a["name"] == name)
+
+
+def test_lending_and_settling_move_money_but_not_net_worth():
+    repo = FakeRepo()
+    with _client(repo) as c:
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 500})
         body = {"direction": "lent", "person": "A", "amount_paise": 400}
         entry = c.post(f"{BASE}/khata", json=body)
         assert entry.status_code == 201
@@ -497,16 +338,17 @@ def test_settling_lent_money_puts_it_back_in_the_balance():
         assert c.post(f"{BASE}/khata/{entry.json()['id']}/settle").status_code == 204
         assert c.get(f"{BASE}/khata").json() == []
         s = c.get(f"{BASE}/summary").json()
-        spends = c.get(f"{BASE}/spends", params={"start": "2000-01-01", "end": "2000-02-01"}).json()
-    assert s["owed_to_you_paise"] == 0
-    # Lending was only a record; getting the money back is what adds it.
-    assert before["net_worth_paise"] == 1000
-    assert s["net_worth_paise"] == s["balance_paise"] == 1400
-    assert s["received_since_update_paise"] == 400
+        spends = c.get(f"{BASE}/spends", params={"start": TODAY, "end": TODAY}).json()
+    # Lent from Cash (the chip's default): cash down, receivable up.
+    assert before["starting_money"]["cash_paise"] == 100
+    assert before["owed_to_you_paise"] == 400 and before["net_worth_paise"] == 1500
+    # Paid back with no method given: into the bank. Not income.
+    assert s["starting_money"]["bank_paise"] == 1400 and s["owed_to_you_paise"] == 0
+    assert s["net_worth_paise"] == s["balance_paise"] == 1500
     assert spends == []
 
 
-def test_settling_borrowed_money_logs_a_paid_back_spend():
+def test_paying_back_borrowed_money_is_a_repayment_not_a_spend():
     repo = FakeRepo()
     with _client(repo) as c:
         c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
@@ -515,22 +357,60 @@ def test_settling_borrowed_money_logs_a_paid_back_spend():
         before = c.get(f"{BASE}/summary").json()
         settled = c.post(f"{BASE}/khata/{entry['id']}/settle", json={"method": "upi"})
         s = c.get(f"{BASE}/summary").json()
-        # A repeat settle is a 404 and logs nothing more.
+        # A repeat settle is a 404 and moves nothing more.
         assert c.post(f"{BASE}/khata/{entry['id']}/settle").status_code == 404
-        # Unknown payment methods are refused.
+        # Unknown payment methods are refused; "cash" pays from Cash.
         other = c.post(f"{BASE}/khata", json={**body, "person": "Asha"}).json()
         bad = c.post(f"{BASE}/khata/{other['id']}/settle", json={"method": "cheque"})
-        plain = c.post(f"{BASE}/khata/{other['id']}/settle")
-    assert settled.status_code == 204 and bad.status_code == 422 and plain.status_code == 204
-    logged = repo.spends[USER_A]
-    assert [(x.description, x.amount_paise, x.category) for x in logged] == [
-        ("Paid back to Ravi via UPI", 300, "other"),
-        ("Paid back to Asha", 300, "other"),
-    ]
-    # Borrowing was only a record; paying it back is what takes money out.
-    assert before["net_worth_paise"] == 1000
-    assert s["net_worth_paise"] == s["balance_paise"] == 700
-    assert s["you_owe_paise"] == 0
+        cash = c.post(f"{BASE}/khata/{other['id']}/settle", json={"method": "cash"})
+    assert settled.status_code == 204 and bad.status_code == 422 and cash.status_code == 204
+    assert not repo.live(USER_A, "expense")
+    paid = repo.live(USER_A, "repayment_made")
+    assert [t["account_id"] for t in paid] == [_account_id(repo, "Bank"), _account_id(repo, "Cash")]
+    assert before["you_owe_paise"] == 300 and before["net_worth_paise"] == 1000
+    assert s["you_owe_paise"] == 0 and s["net_worth_paise"] == 1000
+    assert s["starting_money"]["bank_paise"] == 700
+
+
+def test_khata_account_chip_and_retry():
+    repo = FakeRepo()
+    with _client(repo, USER_B) as c:
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 100, "cash_paise": 0})
+    theirs = _account_id(repo, "Bank")
+    with _client(repo) as c:
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
+        bank = next(a["id"] for a in repo.accounts if a["user_id"] == USER_A and a["name"] == "Bank")
+        k = key()
+        body = {"direction": "lent", "person": "A", "amount_paise": 200, "account_id": bank,
+                "client_key": k}  # fmt: skip
+        first = c.post(f"{BASE}/khata", json=body)
+        again = c.post(f"{BASE}/khata", json=body)
+        wrong = c.post(f"{BASE}/khata", json={**body, "client_key": key(), "account_id": theirs})
+        settle = c.post(f"{BASE}/khata/{first.json()['id']}/settle", json={"account_id": theirs})
+        s = c.get(f"{BASE}/summary").json()
+    assert first.status_code == 201 and first.json()["id"] == again.json()["id"]
+    assert len(repo.khata[USER_A]) == 1
+    assert wrong.status_code == 422 and settle.status_code == 422
+    assert s["starting_money"]["bank_paise"] == 800 and s["owed_to_you_paise"] == 200
+
+
+def test_khata_before_any_balance_still_counts_what_is_owed():
+    with _client(FakeRepo()) as c:
+        c.post(f"{BASE}/khata", json={"direction": "lent", "person": "A", "amount_paise": 400})
+        s = c.get(f"{BASE}/summary").json()
+    assert s["starting_money"] is None and s["net_worth_paise"] is None
+    assert s["owed_to_you_paise"] == 400
+
+
+def test_spends_from_the_old_app_land_on_the_bank_account():
+    repo = FakeRepo()
+    with _client(repo) as c:
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 100})
+        spend = c.post(f"{BASE}/spends", json={**SPEND, "spent_on": TODAY}).json()
+        listed = c.get(f"{BASE}/spends", params={"start": TODAY, "end": TODAY}).json()
+    [row] = repo.live(USER_A, "expense")
+    assert row["account_id"] == _account_id(repo, "Bank") and row["category"] == "food_delivery"
+    assert spend["category"] == "food" and [x["id"] for x in listed] == [spend["id"]]
 
 
 def test_delete_returns_204_then_404_and_bad_id_is_422():
@@ -584,13 +464,18 @@ class FakeAssessmentRepo:
 
 def _seed_pattern(repo: FakeRepo) -> None:
     today = datetime.now(IST).date()
-    repo.spends[USER_A] = [
-        Spend(
-            id=str(i), description="Zomato", amount_paise=30000, category="food",
-            spent_on=today - timedelta(days=i), created_at=_now(),
+    for i in range(3):
+        stamp = now()
+        repo.txns.append(
+            {
+                "id": key(), "user_id": USER_A, "client_key": key(), "type": "expense",
+                "amount_paise": 30000, "account_id": None, "to_account_id": None,
+                "category": "food_delivery", "description": "Zomato", "note": None,
+                "reason": None, "khata_entry_id": None, "refund_of": None,
+                "occurred_on": (today - timedelta(days=i)).isoformat(), "source": "legacy",
+                "deleted_at": None, "created_at": stamp, "updated_at": stamp,
+            }
         )  # fmt: skip
-        for i in range(3)
-    ]
 
 
 def test_nudge_plan_returns_pattern_nudge_with_archetype_copy():
@@ -716,7 +601,7 @@ def test_answer_yes_logs_the_clamped_billing_date():
     with _client(repo) as c:
         sub_id = c.post(f"{BASE}/subscriptions", json=_sub(day=31, starts="2026-01-05")).json()["id"]
         c.post(f"{BASE}/subscriptions/{sub_id}/cycles", json={"month": "2026-02-01", "active": True})
-    assert [s.spent_on for s in repo.spends[USER_A]] == [date(2026, 2, 28)]
+    assert [t["occurred_on"] for t in repo.live(USER_A, "expense")] == ["2026-02-28"]
 
 
 def test_duplicate_active_subscription_name_is_409():
@@ -733,7 +618,7 @@ def test_nudge_plan_skips_subscription_nudge_for_an_answered_cycle():
     with _client(repo) as c:
         app.dependency_overrides[get_assessment_repo] = lambda: FakeAssessmentRepo(None)
         sub = c.post(f"{BASE}/subscriptions", json=_sub(day=tomorrow.day)).json()
-        repo.cycles.setdefault(USER_A, {})[sub["id"]] = {tomorrow.replace(day=1)}
+        repo.cycles.setdefault(USER_A, {})[sub["id"]] = {tomorrow.replace(day=1): None}
         body = c.get(f"{NUDGES}/plan").json()
     assert not any(n["kind"] == "subscription" for n in body)
 

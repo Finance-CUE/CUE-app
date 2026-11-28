@@ -4,6 +4,7 @@ import { AppState } from 'react-native';
 
 import * as moneyApi from '@/features/money/api';
 import { toISODate } from '@/features/money/dates';
+import type { CashFlowPeriod } from '@/features/money/types';
 
 /**
  * The current date, moved on when the app resumes on a new local calendar day.
@@ -32,21 +33,103 @@ export const useSpends = (start: string, end: string) =>
 export const useSummary = (enabled = true) =>
   useQuery({ queryKey: ['money', 'summary'], queryFn: moneyApi.fetchSummary, enabled });
 
-export const useKhata = () =>
-  useQuery({ queryKey: ['money', 'khata'], queryFn: moneyApi.fetchKhata });
-
-export const useSubscriptions = (today: string) =>
+export const useAccounts = (today: string, enabled = true) =>
   useQuery({
-    queryKey: ['money', 'subscriptions', today],
-    queryFn: () => moneyApi.fetchSubscriptions(today),
-  });
-
-export const useDueSubscriptions = (today: string, enabled = true) =>
-  useQuery({
-    queryKey: ['money', 'subscriptions', 'due', today],
-    queryFn: () => moneyApi.fetchDueSubscriptions(today),
+    queryKey: ['money', 'accounts', today],
+    queryFn: () => moneyApi.fetchAccounts(today),
     enabled,
   });
+
+export const useAccountDetail = (id: string, today: string) =>
+  useQuery({
+    queryKey: ['money', 'account', id, today],
+    queryFn: () => moneyApi.fetchAccountDetail(id, today),
+  });
+
+export const useNetWorth = (today: string) =>
+  useQuery({ queryKey: ['money', 'net-worth', today], queryFn: () => moneyApi.fetchNetWorth(today) });
+
+export const useTransactions = (start: string, end: string, enabled = true, recurring = false) =>
+  useQuery({
+    queryKey: ['money', 'transactions', start, end, recurring],
+    queryFn: () => moneyApi.fetchTransactions(start, end, recurring),
+    enabled,
+  });
+
+// P1 ------------------------------------------------------------------------------
+
+export const useScheduled = (today: string) =>
+  useQuery({ queryKey: ['money', 'scheduled', today], queryFn: () => moneyApi.fetchScheduled(today) });
+
+export const useDues = (start: string, end: string, openBefore = false, enabled = true) =>
+  useQuery({
+    queryKey: ['money', 'dues', start, end, openBefore],
+    queryFn: () => moneyApi.fetchDues(start, end, openBefore),
+    enabled,
+  });
+
+export const useMonth = (today: string) =>
+  useQuery({ queryKey: ['money', 'month', today], queryFn: () => moneyApi.fetchMonth(today) });
+
+export const useMonths = (today: string, count = 6) =>
+  useQuery({ queryKey: ['money', 'months', today, count], queryFn: () => moneyApi.fetchMonths(today, count) });
+
+export const useCashFlow = (period: CashFlowPeriod, on: string, today: string) =>
+  useQuery({
+    queryKey: ['money', 'cash-flow', period, on, today],
+    queryFn: () => moneyApi.fetchCashFlow(period, on, today),
+    // Switching tabs keeps the last chart on screen instead of blanking it.
+    placeholderData: (prev) => prev,
+  });
+
+export const useNetWorthHistory = (today: string, days: number) =>
+  useQuery({
+    queryKey: ['money', 'net-worth-history', today, days],
+    queryFn: () => moneyApi.fetchNetWorthHistory(today, days),
+    placeholderData: (prev) => prev,
+  });
+
+export const useNote = (today: string) =>
+  useQuery({ queryKey: ['money', 'note', today], queryFn: () => moneyApi.fetchNote(today) });
+
+export const useMerchantCategories = (enabled = true) =>
+  useQuery({ queryKey: ['money', 'merchant-categories'], queryFn: moneyApi.fetchMerchantCategories, enabled });
+
+export const useGroups = (enabled = true) =>
+  useQuery({ queryKey: ['money', 'groups'], queryFn: moneyApi.fetchGroups, enabled });
+
+export const useGroup = (id: string | null) =>
+  useQuery({ queryKey: ['money', 'group', id], queryFn: () => moneyApi.fetchGroup(id ?? ''), enabled: id !== null });
+
+export const useJars = (today: string) =>
+  useQuery({ queryKey: ['money', 'jars', today], queryFn: () => moneyApi.fetchJars(today) });
+
+export const useJar = (id: string, today: string) =>
+  useQuery({ queryKey: ['money', 'jar', id, today], queryFn: () => moneyApi.fetchJar(id, today) });
+
+export const usePosition = (on: string | null) =>
+  useQuery({
+    queryKey: ['money', 'position', on],
+    queryFn: () => moneyApi.fetchPosition(on ?? ''),
+    enabled: on !== null,
+  });
+
+/** True once `pending` has lasted `ms`: the server may be waking from sleep (spec, states). */
+export function useSlow(pending: boolean, ms = 6000): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!pending) {
+      setSlow(false);
+      return;
+    }
+    const t = setTimeout(() => setSlow(true), ms);
+    return () => clearTimeout(t);
+  }, [pending, ms]);
+  return slow;
+}
+
+export const useKhata = () =>
+  useQuery({ queryKey: ['money', 'khata'], queryFn: moneyApi.fetchKhata });
 
 export const useTrend = (today: string) =>
   useQuery({ queryKey: ['money', 'trend', today], queryFn: () => moneyApi.fetchTrend(today) });
@@ -67,19 +150,40 @@ function useMoneyMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>) {
   });
 }
 
-export const useLogSpend = () => useMoneyMutation(moneyApi.logSpend);
-export const useUpdateSpend = () => useMoneyMutation(moneyApi.updateSpend);
-export const useDeleteSpend = () => useMoneyMutation(moneyApi.deleteSpend);
-export const useSetStartingMoney = () => useMoneyMutation(moneyApi.putStartingMoney);
 export const useAddKhata = () => useMoneyMutation(moneyApi.addKhata);
+export const useAddAccount = () => useMoneyMutation(moneyApi.addAccount);
+export const useUpdateAccount = () => useMoneyMutation(moneyApi.updateAccount);
+export const useArchiveAccount = () => useMoneyMutation(moneyApi.archiveAccount);
+export const useAdjustBalance = () => useMoneyMutation(moneyApi.adjustBalance);
+export const useAddTransaction = () => useMoneyMutation(moneyApi.addTransaction);
+export const useDeleteTransaction = () => useMoneyMutation(moneyApi.deleteTransaction);
+export const useUpdateTransaction = () => useMoneyMutation(moneyApi.updateTransaction);
+export const useRestoreTransaction = () => useMoneyMutation(moneyApi.restoreTransaction);
 export const useSettleKhata = () => useMoneyMutation(moneyApi.settleKhata);
 export const useDeleteKhata = () => useMoneyMutation(moneyApi.deleteKhata);
-export const useAddSubscription = () => useMoneyMutation(moneyApi.addSubscription);
-export const useDeleteSubscription = () => useMoneyMutation(moneyApi.deleteSubscription);
-export const useAnswerCycle = () =>
-  useMoneyMutation(({ id, month, active }: { id: string; month: string; active: boolean }) =>
-    moneyApi.answerCycle(id, { month, active }),
-  );
+export const useDismissNote = () => useMoneyMutation(moneyApi.dismissNote);
+export const useFixCategory = () => useMoneyMutation(moneyApi.fixCategory);
+export const useAskCue = () => useMutation({ mutationFn: moneyApi.askCue, retry: 0 });
+export const useSettlePerson = () => useMoneyMutation(moneyApi.settlePerson);
+export const useCreateGroup = () => useMoneyMutation(moneyApi.createGroup);
+export const useUpdateGroup = () => useMoneyMutation(moneyApi.updateGroup);
+export const useArchiveGroup = () => useMoneyMutation(moneyApi.archiveGroup);
+export const useAddGroupExpense = () => useMoneyMutation(moneyApi.addGroupExpense);
+export const useEditGroupExpense = () => useMoneyMutation(moneyApi.editGroupExpense);
+export const useSetGroupEntryDeleted = () => useMoneyMutation(moneyApi.setGroupEntryDeleted);
+export const useAddGroupSettlement = () => useMoneyMutation(moneyApi.addGroupSettlement);
+export const useCreateJar = () => useMoneyMutation(moneyApi.createJar);
+export const useUpdateJar = () => useMoneyMutation(moneyApi.updateJar);
+export const useMoveJar = () => useMoneyMutation(moneyApi.moveJar);
+export const useUndoJarMove = () => useMoneyMutation(moneyApi.undoJarMove);
+export const useAnswerContribution = () => useMoneyMutation(moneyApi.answerContribution);
+export const useJarAction = () => useMoneyMutation(moneyApi.jarAction);
+export const useAddScheduled = () => useMoneyMutation(moneyApi.addScheduled);
+export const useUpdateScheduled = () => useMoneyMutation(moneyApi.updateScheduled);
+export const useCancelScheduled = () => useMoneyMutation(moneyApi.cancelScheduled);
+export const usePayScheduled = () => useMoneyMutation(moneyApi.payScheduled);
+export const useSkipScheduled = () => useMoneyMutation(moneyApi.skipScheduled);
+export const useUnskipScheduled = () => useMoneyMutation(moneyApi.unskipScheduled);
 
 export function useSaveNudges() {
   const queryClient = useQueryClient();

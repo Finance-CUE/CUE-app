@@ -5,6 +5,7 @@ Amounts are integer paise. Request models are strict: no type coercion
 are the exception: they arrive as ISO strings and are parsed.
 """
 
+import uuid
 from datetime import date, datetime
 from typing import Annotated, Literal
 
@@ -72,10 +73,18 @@ class SpendUpdate(_StrictRequest):
     spent_on: _BoundedDate
 
 
+_OptionalId = Annotated[uuid.UUID, Field(strict=False)] | None
+
+
 class SettleRequest(_StrictRequest):
-    """How a borrowed amount was paid back; recorded on the logged spend."""
+    """Where the money came back to or was paid from.
+
+    account_id is the account chip. Older apps send only method: cash settles
+    against the Cash account, UPI (or nothing) against the bank account.
+    """
 
     method: Literal["cash", "upi"] | None = None
+    account_id: _OptionalId = None
 
 
 class StartingMoneyPut(_StrictRequest):
@@ -88,6 +97,12 @@ class KhataCreate(_StrictRequest):
     person: _Name
     amount_paise: _Positive
     note: _Note = None
+    # The account chip (default Cash). Older apps send neither field.
+    account_id: _OptionalId = None
+    client_key: _OptionalId = None
+    # Quick Add Lend and Borrow (P3): when it happened (default today) and an optional due date.
+    occurred_on: _BoundedDate | None = None
+    due_on: _BoundedDate | None = None
 
 
 class SubscriptionCreate(_StrictRequest):
@@ -131,6 +146,26 @@ class KhataEntry(BaseModel):
     amount_paise: int
     note: str | None
     created_at: datetime
+    # P3: what is still open after part payments, and the due date if one was set.
+    outstanding_paise: int | None = None
+    due_on: date | None = None
+
+
+class PersonSettle(_StrictRequest):
+    """A payment between the user and one person, any amount (spec Settlement).
+
+    from_them: they paid the user (reduces money lent); otherwise the user paid
+    them (reduces money borrowed). More than is open needs allow_over: the rest
+    becomes a new entry the other way.
+    """
+
+    client_key: Annotated[uuid.UUID, Field(strict=False)]
+    person: _Name
+    from_them: StrictBool
+    amount_paise: _Positive
+    account_id: Annotated[uuid.UUID, Field(strict=False)]
+    occurred_on: _BoundedDate
+    allow_over: StrictBool = False
 
 
 class Subscription(BaseModel):
@@ -152,23 +187,10 @@ class DueCycle(BaseModel):
     billing_on: date
 
 
-class Credit(BaseModel):
-    """Money that came back into the balance: a lent Khata entry marked settled."""
-
-    amount_paise: int
-    at: datetime
-
-
 class TrendPoint(BaseModel):
     date: date
     balance_paise: int | None
     spent_paise: int
-
-
-class BalanceSnapshot(BaseModel):
-    bank_paise: int
-    cash_paise: int
-    recorded_at: datetime
 
 
 class NudgeTemplate(BaseModel):
@@ -185,13 +207,15 @@ class StartingMoney(BaseModel):
 
 
 class MoneySummary(BaseModel):
+    """The old app's summary, served from the ledger (see legacy.build_summary)."""
+
     net_worth_paise: int | None
+    # Today's bank and cash balances; null until the user has an account.
     starting_money: StartingMoney | None
-    # Spends logged after the balance was last set; already taken off net_worth_paise.
+    # Kept for older apps. Balances are always current now, so these are 0.
     spent_since_update_paise: int = 0
-    # Money lent and marked settled (paid back to you) since then; already added.
     received_since_update_paise: int = 0
-    # Bank + cash now: the saved balance, less spends, plus money received back.
+    # Bank + cash now (the spec's available balance).
     balance_paise: int | None = None
     owed_to_you_paise: int
     you_owe_paise: int

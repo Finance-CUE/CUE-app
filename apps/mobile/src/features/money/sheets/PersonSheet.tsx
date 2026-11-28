@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS } from '@/features/assessment/theme';
+import { COLORS, FONT } from '@/features/money/palette';
 import { toErrorMessage } from '@/lib/api';
-import { Card, PrimaryButton } from '../components/ui';
-import { formatDateTime } from '../dates';
-import { formatRupees } from '../format';
+import { Card, PrimaryButton, SecondaryButton } from '../components/ui';
+import { formatDate, formatDateTime } from '../dates';
+import { useRupees } from '../privacy';
 import { useDeleteKhata, useSettleKhata } from '../hooks';
 import type { PersonBalance } from '../khata';
 import type { KhataEntry, PaymentMethod } from '../types';
@@ -15,10 +15,15 @@ import { FormError, Sheet } from './Sheet';
 export function PersonSheet({
   person,
   onClose,
+  onRecordPayment,
 }: {
   person: PersonBalance | undefined;
   onClose: () => void;
+  /** Part payments (P3): opens the Settlement sheet for this person. */
+  onRecordPayment?: (person: PersonBalance) => void;
 }) {
+  // Masked while the eye toggle hides amounts.
+  const formatRupees = useRupees();
   const settle = useSettleKhata();
   const remove = useDeleteKhata();
   const [error, setError] = useState<string | null>(null);
@@ -43,16 +48,15 @@ export function PersonSheet({
     }
   };
 
-  // Paying back a debt is a real payment, logged as a spend; ask how it was paid first.
+  // Settling moves real money either way: ask how, so it lands in Cash or the bank.
   const markSettled = (e: KhataEntry) => {
-    if (e.direction === 'lent') {
-      void act(() => settle.mutateAsync({ id: e.id }));
-      return;
-    }
     const pay = (method: PaymentMethod) => void act(() => settle.mutateAsync({ id: e.id, method }));
+    const lent = e.direction === 'lent';
     Alert.alert(
-      `How did you pay ${e.person} back?`,
-      `${formatRupees(e.amount_paise)} will be logged as a payment and taken off your balance.`,
+      lent ? `How did ${e.person} pay you back?` : `How did you pay ${e.person} back?`,
+      lent
+        ? `${formatRupees(e.outstanding_paise ?? e.amount_paise)} will be added back to your cash or bank balance.`
+        : `${formatRupees(e.outstanding_paise ?? e.amount_paise)} will be taken from your cash or bank balance.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Cash', onPress: () => pay('cash') },
@@ -62,20 +66,42 @@ export function PersonSheet({
   };
 
   return (
-    <Sheet visible={person !== undefined} onClose={onClose} title={person?.person ?? ''}>
+    <Sheet
+      visible={person !== undefined}
+      onClose={onClose}
+      title={person?.person ?? ''}
+      subtitle={
+        person
+          ? person.net_paise > 0
+            ? `Owes you ${formatRupees(person.net_paise)}`
+            : person.net_paise < 0
+              ? `You owe ${formatRupees(-person.net_paise)}`
+              : 'All square'
+          : undefined
+      }>
+      {person && onRecordPayment ? (
+        <PrimaryButton label="Record a payment" onPress={() => onRecordPayment(person)} disabled={busy} />
+      ) : null}
       <FormError message={error} />
       {person?.entries.map((e) => (
         <Card key={e.id} style={{ gap: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 15, color: COLORS.text }}>{e.direction === 'lent' ? 'You lent' : 'You borrowed'}</Text>
-            <Text style={{ fontSize: 15, fontWeight: '600', color: COLORS.text }}>{formatRupees(e.amount_paise)}</Text>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text }}>{e.direction === 'lent' ? 'You lent' : 'You borrowed'}</Text>
+            <Text style={{ fontFamily: FONT.semibold, fontSize: 15, color: COLORS.text }}>{formatRupees(e.amount_paise)}</Text>
           </View>
-          {e.note ? <Text style={{ fontSize: 13, color: COLORS.text }}>{e.note}</Text> : null}
-          <Text style={{ fontSize: 12, color: COLORS.muted }}>{formatDateTime(e.created_at)}</Text>
-          <PrimaryButton
-            label={e.direction === 'lent' ? 'Mark received' : 'Mark paid back'}
+          {e.outstanding_paise !== undefined && e.outstanding_paise !== null && e.outstanding_paise !== e.amount_paise ? (
+            <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text }}>
+              {formatRupees(e.outstanding_paise)} still open after part payments
+            </Text>
+          ) : null}
+          {e.due_on ? (
+            <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text }}>Due {formatDate(e.due_on)}</Text>
+          ) : null}
+          {e.note ? <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text }}>{e.note}</Text> : null}
+          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.muted }}>{formatDateTime(e.created_at)}</Text>
+          <SecondaryButton
+            label={e.direction === 'lent' ? 'Mark fully received' : 'Mark fully paid back'}
             onPress={() => markSettled(e)}
-            disabled={busy}
           />
           <TouchableOpacity
             accessibilityRole="button"
@@ -90,9 +116,8 @@ export function PersonSheet({
               borderColor: COLORS.error,
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: busy ? 0.4 : 1,
-            }}>
-            <Text style={{ color: COLORS.error, fontSize: 16, fontWeight: '600' }}>Delete</Text>
+              opacity: busy ? 0.4 : 1 }}>
+            <Text style={{ fontFamily: FONT.semibold, color: COLORS.error, fontSize: 16 }}>Delete</Text>
           </TouchableOpacity>
         </Card>
       ))}
