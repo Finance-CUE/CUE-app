@@ -73,3 +73,28 @@ export function formatDateTime(iso: string): string {
   const time = `${h % 12 || 12}:${pad(d.getMinutes())} ${h < 12 ? 'am' : 'pm'}`;
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${time}`;
 }
+
+/** ISO date `n` days before `d` (local calendar). */
+export function daysBefore(d: Date, n: number): string {
+  return toISODate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - n));
+}
+
+/** `2026-11-06` to `06/11/2026`, the format the date field takes. */
+export function toDisplayDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+/** Why a spend date is not allowed, or null. Spends cannot be in the future or before 2000. */
+export function spendDateProblem(iso: string | null, today: Date): string | null {
+  if (iso === null) return 'Enter the date as DD/MM/YYYY.';
+  if (iso > toISODate(today)) return "A spend can't be in the future.";
+  if (iso < '2000-01-01') return 'Choose a date after 2000.';
+  return null;
+}
+
+/** Monday (ISO) of the week `weeksBack` weeks before the week containing `d`. */
+export function weekStartBack(d: Date, weeksBack: number): Date {
+  const monday = startOfWeek(d);
+  return new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 7 * weeksBack);
+}

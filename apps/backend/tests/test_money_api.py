@@ -17,6 +17,7 @@ from app.features.money.repository import MoneyConflictError, MoneyStoreError
 from app.features.money.router import get_money_repo
 from app.features.money.schemas import (
     BalanceSnapshot,
+    Credit,
     KhataEntry,
     NudgeTemplate,
     Nudges,
@@ -40,8 +41,12 @@ IST = ZoneInfo("Asia/Kolkata")
 SPEND = {"description": "Chai", "amount_paise": 2000, "category": "food", "spent_on": "2026-10-24"}
 
 
+_LAST = [datetime.now(UTC)]
+
+
 def _now() -> datetime:
-    return datetime.now(UTC)
+    _LAST[0] = max(datetime.now(UTC), _LAST[0] + timedelta(microseconds=1))
+    return _LAST[0]
 
 
 class FakeRepo:
@@ -49,7 +54,7 @@ class FakeRepo:
         self.spends: dict[str, list[Spend]] = {}
         self.starting: dict[str, StartingMoney] = {}
         self.khata: dict[str, list[KhataEntry]] = {}
-        self.settled: set[str] = set()
+        self.settled: dict[str, datetime] = {}
         self.subs: dict[str, list[Subscription]] = {}
         self.cycles: dict[str, dict[str, set[date]]] = {}
         self.history: dict[str, list[BalanceSnapshot]] = {}
@@ -101,12 +106,23 @@ class FakeRepo:
     async def delete_spend(self, user_id, spend_id):
         return self._drop(self.spends.get(user_id, []), spend_id)
 
+    async def update_spend(self, user_id, spend_id, data):
+        rows = self.spends.get(user_id, [])
+        for i, row in enumerate(rows):
+            if row.id == spend_id and row.category != "subscription":
+                rows[i] = row.model_copy(update=data.model_dump())
+                return rows[i]
+        return None
+
+    async def sum_spends_logged_after(self, user_id, after):
+        return sum(s.amount_paise for s in self.spends.get(user_id, []) if s.created_at > after)
+
     async def get_starting_money(self, user_id):
         return self.starting.get(user_id)
 
     async def put_starting_money(self, user_id, data):
         old = self.starting.get(user_id)
-        row = StartingMoney(set_at=old.set_at if old else _now(), **data.model_dump())
+        row = StartingMoney(set_at=_now(), **data.model_dump())
         self.starting[user_id] = row
         self.history.setdefault(user_id, []).append(
             BalanceSnapshot(recorded_at=_now(), **data.model_dump())
@@ -122,10 +138,18 @@ class FakeRepo:
         return entry
 
     async def settle_khata(self, user_id, entry_id):
-        if any(k.id == entry_id for k in await self.list_open_khata(user_id)):
-            self.settled.add(entry_id)
-            return True
-        return False
+        for k in await self.list_open_khata(user_id):
+            if k.id == entry_id:
+                self.settled[entry_id] = _now()
+                return k
+        return None
+
+    async def list_received_after(self, user_id, after):
+        return [
+            Credit(amount_paise=k.amount_paise, at=self.settled[k.id])
+            for k in self.khata.get(user_id, [])
+            if k.direction == "lent" and k.id in self.settled and self.settled[k.id] > after
+        ]
 
     async def delete_khata(self, user_id, entry_id):
         return self._drop(self.khata.get(user_id, []), entry_id)
@@ -220,6 +244,7 @@ def test_every_money_route_requires_a_token():
             c.get(f"{BASE}/spends", params={"start": "2026-10-01", "end": "2026-10-31"}),
             c.post(f"{BASE}/spends", json=SPEND),
             c.delete(f"{BASE}/spends/{some}"),
+            c.patch(f"{BASE}/spends/{some}", json={}),
             c.put(f"{BASE}/starting-money", json={"bank_paise": 0, "cash_paise": 0}),
             c.get(f"{BASE}/khata"),
             c.post(f"{BASE}/khata", json={}),
@@ -276,10 +301,16 @@ def test_user_b_cannot_delete_or_settle_user_a_rows():
         ).json()["id"]
     with _client(repo, USER_B) as c:
         assert c.delete(f"{BASE}/spends/{spend_id}").status_code == 404
+        edit = {"description": "X", "amount_paise": 1, "category": "food", "spent_on": "2026-10-20"}
+        assert c.patch(f"{BASE}/spends/{spend_id}", json=edit).status_code == 404
+        # B's balance never includes A's spends.
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 100, "cash_paise": 0})
+        assert c.get(f"{BASE}/summary").json()["net_worth_paise"] == 100
         assert c.post(f"{BASE}/khata/{khata_id}/settle").status_code == 404
         assert c.delete(f"{BASE}/khata/{khata_id}").status_code == 404
     assert len(repo.spends[USER_A]) == 1
     assert len(repo.khata[USER_A]) == 1 and not repo.settled
+    assert len(repo.spends[USER_A]) == 1
 
 
 def test_summary_null_net_worth_until_starting_money_set():
@@ -290,15 +321,71 @@ def test_summary_null_net_worth_until_starting_money_set():
         assert before["owed_to_you_paise"] == 0 and before["you_owe_paise"] == 0
 
 
-def test_net_worth_is_bank_cash_lent_borrowed_and_ignores_spends():
+def test_net_worth_takes_off_spends_logged_after_the_balance_was_set():
     with _client(FakeRepo()) as c:
+        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 999})  # before: already in balance
         c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 50})
         c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 300})
         c.post(f"{BASE}/khata", json={"direction": "lent", "person": "A", "amount_paise": 400})
         c.post(f"{BASE}/khata", json={"direction": "borrowed", "person": "B", "amount_paise": 100})
         s = c.get(f"{BASE}/summary").json()
-    assert s["net_worth_paise"] == 1000 + 50 + 400 - 100
+        # Updating the balance again resets the reference point.
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 700, "cash_paise": 50})
+        after = c.get(f"{BASE}/summary").json()
+    # Open Khata entries are records only: they never move net worth.
+    assert s["net_worth_paise"] == 1000 + 50 - 300
+    assert s["spent_since_update_paise"] == 300
     assert (s["owed_to_you_paise"], s["you_owe_paise"]) == (400, 100)
+    assert after["net_worth_paise"] == 700 + 50
+    assert after["spent_since_update_paise"] == 0
+
+
+def test_net_worth_measures_from_the_latest_balance_snapshot_for_older_rows():
+    # Rows saved before set_at was restamped: set_at is old, history has the update.
+    repo = FakeRepo()
+    with _client(repo) as c:
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
+        c.post(f"{BASE}/spends", json={**SPEND, "amount_paise": 300})
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 700, "cash_paise": 0})
+        old = repo.starting[USER_A]
+        repo.starting[USER_A] = old.model_copy(update={"set_at": old.set_at - timedelta(days=30)})
+        s = c.get(f"{BASE}/summary").json()
+    assert s["net_worth_paise"] == 700 and s["spent_since_update_paise"] == 0
+
+
+def test_edit_spend_changes_fields_and_refuses_subscription_payments():
+    repo = FakeRepo()
+    with _client(repo) as c:
+        spend = c.post(f"{BASE}/spends", json=SPEND).json()
+        edited = c.patch(
+            f"{BASE}/spends/{spend['id']}",
+            json={"description": "Lunch", "amount_paise": 15000, "category": "food",
+                  "spent_on": "2026-10-20"},
+        )  # fmt: skip
+        sub_spend = c.post(
+            f"{BASE}/spends",
+            json={**SPEND, "description": "Netflix", "category": "subscription", "billing_day": 24},
+        ).json()
+        refused = c.patch(
+            f"{BASE}/spends/{sub_spend['id']}",
+            json={"description": "X", "amount_paise": 1, "category": "food",
+                  "spent_on": "2026-10-20"},
+        )  # fmt: skip
+        bad_cat = c.patch(
+            f"{BASE}/spends/{spend['id']}",
+            json={"description": "X", "amount_paise": 1, "category": "subscription",
+                  "spent_on": "2026-10-20"},
+        )  # fmt: skip
+        missing = c.patch(
+            f"{BASE}/spends/{uuid.uuid4()}",
+            json={"description": "X", "amount_paise": 1, "category": "food",
+                  "spent_on": "2026-10-20"},
+        )  # fmt: skip
+    assert edited.status_code == 200
+    assert (edited.json()["description"], edited.json()["amount_paise"]) == ("Lunch", 15000)
+    assert edited.json()["spent_on"] == "2026-10-20"
+    assert refused.status_code == 404 and bad_cat.status_code == 422
+    assert missing.status_code == 404
 
 
 def _sub(name="Netflix", day=31, starts="2026-01-05", amount=19900):
@@ -400,17 +487,50 @@ def test_invalid_tz_is_422(path):
         assert c.get(f"{PROFILE}/{path}", params={**params, "tz": "../x"}).status_code == 422
 
 
-def test_settled_khata_leaves_list_and_summary():
+def test_settling_lent_money_puts_it_back_in_the_balance():
     with _client(FakeRepo()) as c:
         c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
         body = {"direction": "lent", "person": "A", "amount_paise": 400}
         entry = c.post(f"{BASE}/khata", json=body)
         assert entry.status_code == 201
+        before = c.get(f"{BASE}/summary").json()
         assert c.post(f"{BASE}/khata/{entry.json()['id']}/settle").status_code == 204
         assert c.get(f"{BASE}/khata").json() == []
         s = c.get(f"{BASE}/summary").json()
+        spends = c.get(f"{BASE}/spends", params={"start": "2000-01-01", "end": "2000-02-01"}).json()
     assert s["owed_to_you_paise"] == 0
-    assert s["net_worth_paise"] == 1000
+    # Lending was only a record; getting the money back is what adds it.
+    assert before["net_worth_paise"] == 1000
+    assert s["net_worth_paise"] == s["balance_paise"] == 1400
+    assert s["received_since_update_paise"] == 400
+    assert spends == []
+
+
+def test_settling_borrowed_money_logs_a_paid_back_spend():
+    repo = FakeRepo()
+    with _client(repo) as c:
+        c.put(f"{BASE}/starting-money", json={"bank_paise": 1000, "cash_paise": 0})
+        body = {"direction": "borrowed", "person": "Ravi", "amount_paise": 300}
+        entry = c.post(f"{BASE}/khata", json=body).json()
+        before = c.get(f"{BASE}/summary").json()
+        settled = c.post(f"{BASE}/khata/{entry['id']}/settle", json={"method": "upi"})
+        s = c.get(f"{BASE}/summary").json()
+        # A repeat settle is a 404 and logs nothing more.
+        assert c.post(f"{BASE}/khata/{entry['id']}/settle").status_code == 404
+        # Unknown payment methods are refused.
+        other = c.post(f"{BASE}/khata", json={**body, "person": "Asha"}).json()
+        bad = c.post(f"{BASE}/khata/{other['id']}/settle", json={"method": "cheque"})
+        plain = c.post(f"{BASE}/khata/{other['id']}/settle")
+    assert settled.status_code == 204 and bad.status_code == 422 and plain.status_code == 204
+    logged = repo.spends[USER_A]
+    assert [(x.description, x.amount_paise, x.category) for x in logged] == [
+        ("Paid back to Ravi via UPI", 300, "other"),
+        ("Paid back to Asha", 300, "other"),
+    ]
+    # Borrowing was only a record; paying it back is what takes money out.
+    assert before["net_worth_paise"] == 1000
+    assert s["net_worth_paise"] == s["balance_paise"] == 700
+    assert s["you_owe_paise"] == 0
 
 
 def test_delete_returns_204_then_404_and_bad_id_is_422():

@@ -9,8 +9,10 @@ import { useKhata } from '../hooks';
 import { personBalances, type PersonBalance } from '../khata';
 import { KhataSheet } from '../sheets/KhataSheet';
 import { PersonSheet } from '../sheets/PersonSheet';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 export function KhataScreen() {
+  const theme = useArchetypeTheme();
   const queryClient = useQueryClient();
   const avatar = useProfileAvatar();
   const [refreshing, setRefreshing] = useState(false);
@@ -45,7 +47,7 @@ export function KhataScreen() {
         />
         {khata.isLoading ? (
           <Card>
-            <ActivityIndicator color={COLORS.purple} />
+            <ActivityIndicator color={theme.accent} />
           </Card>
         ) : khata.isError ? (
           <EmptyCard text="Could not load. Pull to refresh." />
@@ -80,7 +82,7 @@ export function KhataScreen() {
         <Card style={{ backgroundColor: COLORS.sageTint, borderColor: COLORS.sageTint, borderRadius: 22, padding: 22 }}>
           <Text
             style={{ textAlign: 'center', fontSize: 16, lineHeight: 24, color: COLORS.text, fontFamily: HEADING_FONT }}>
-            {'This is the ledger no bank app shows you.\nEvery rupee lent or borrowed, counted in your net worth.'}
+            {'This is the ledger no bank app shows you.\nEvery rupee lent or borrowed, on record. Your balance changes when it’s settled.'}
           </Text>
         </Card>
       </ScreenScroll>

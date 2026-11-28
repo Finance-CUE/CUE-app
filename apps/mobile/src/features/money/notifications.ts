@@ -53,6 +53,17 @@ export function cancelAllNudges(): Promise<void> {
   });
 }
 
+/** Whether CUE may show notifications. Web and errors count as granted (nothing to fix). */
+export async function notificationsBlocked(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  try {
+    const current = await Notifications.getPermissionsAsync();
+    return !current.granted && !current.canAskAgain;
+  } catch {
+    return false;
+  }
+}
+
 async function ensurePermission(): Promise<boolean> {
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;

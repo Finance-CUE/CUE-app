@@ -21,7 +21,7 @@ interface LoginScreenProps {
 }
 
 const COLORS = {
-  background: '#FAF8F6',
+  background: '#FAF7F2',
   text: '#292531',
   muted: '#918C95',
   mutedLight: '#A29CA8',

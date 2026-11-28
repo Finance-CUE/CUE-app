@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { type Href, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, AppState, Linking, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 import { fetchResult } from '@/features/assessment/api';
 import { COLORS, HEADING_FONT } from '@/features/assessment/theme';
@@ -12,8 +12,10 @@ import { categoryLabel } from '../categories';
 import { startOfWeek, toISODate } from '../dates';
 import { formatRupees } from '../format';
 import { useNudgePlan, useNudges, useSaveNudges, useSpends, useToday, useTrend } from '../hooks';
+import { notificationsBlocked } from '../notifications';
 import { weeklyReflection } from '../reflection';
 import type { Nudges, PlannedNudge } from '../types';
+import { useArchetypeTheme } from '@/features/theme/useArchetypeTheme';
 
 const NUDGE_ROWS: { key: keyof Nudges; title: string; subtitle: string }[] = [
   { key: 'pre_spend', title: 'Pre-spend pause', subtitle: 'Before unplanned spends' },
@@ -41,7 +43,24 @@ function takenLabel(computedAt: string | null): string | null {
   return `Based on your full assessment · taken ${when}`;
 }
 
+/** True when the user has turned CUE's notifications off in system settings. Rechecked on resume. */
+function useNotificationsBlocked(): boolean {
+  const [blocked, setBlocked] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      notificationsBlocked().then(setBlocked, () => setBlocked(false));
+    };
+    check();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') check();
+    });
+    return () => sub.remove();
+  }, []);
+  return blocked;
+}
+
 export function YouScreen() {
+  const theme = useArchetypeTheme();
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
@@ -66,6 +85,7 @@ export function YouScreen() {
         : undefined,
   };
   const save = useSaveNudges();
+  const blocked = useNotificationsBlocked();
   // Optimistic value for the switch being saved; cleared on settle so errors revert it.
   const [pending, setPending] = useState<Partial<Nudges>>({});
 
@@ -95,12 +115,12 @@ export function YouScreen() {
         <Sparkline points={trend.data ?? []} onPress={() => router.push('/net-worth' as Href) /* typed routes regenerate on next expo start */} />
       </View>
 
-      <Card style={{ borderLeftWidth: 4, borderLeftColor: COLORS.purple }}>
+      <Card style={{ borderLeftWidth: 4, borderLeftColor: theme.accent }}>
         {result.isError ? (
           <>
             <Text style={{ fontSize: 15, color: COLORS.muted }}>Could not load your pattern</Text>
             <TouchableOpacity accessibilityRole="button" onPress={() => result.refetch()} style={{ paddingVertical: 8 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.purple }}>Try again</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>Try again</Text>
             </TouchableOpacity>
           </>
         ) : primary ? (
@@ -109,7 +129,21 @@ export function YouScreen() {
             <Text style={{ fontSize: 24, color: COLORS.text, fontFamily: HEADING_FONT, marginTop: 6 }}>
               {primary.name}
             </Text>
+            {result.data?.secondary ? (
+              <Text style={{ fontSize: 14, color: COLORS.text, marginTop: 4 }}>
+                with {result.data.secondary.name} and {result.data.tertiary.name} in the mix
+              </Text>
+            ) : null}
             {taken ? <Text style={{ fontSize: 13, color: COLORS.muted, marginTop: 6 }}>{taken}</Text> : null}
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => router.push('/profile' as Href)}
+              hitSlop={8}
+              style={{ paddingTop: 12 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>
+                See your full profile ›
+              </Text>
+            </TouchableOpacity>
           </>
         ) : result.data === null ? (
           <Text style={{ fontSize: 15, color: COLORS.muted }}>Take the assessment to see your pattern</Text>
@@ -120,6 +154,16 @@ export function YouScreen() {
 
       <Card>
         <Text style={{ fontSize: 18, color: COLORS.text, marginBottom: 6, fontFamily: HEADING_FONT }}>Nudge preferences</Text>
+        {blocked ? (
+          <View style={{ backgroundColor: COLORS.peachTint, borderRadius: 12, padding: 12, marginBottom: 6, gap: 6 }}>
+            <Text style={{ fontSize: 14, color: COLORS.text }}>
+              Notifications are off for CUE, so nudges and subscription reminders can't reach you.
+            </Text>
+            <TouchableOpacity accessibilityRole="button" onPress={() => Linking.openSettings()} hitSlop={8}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.accentText }}>Open settings</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         {NUDGE_ROWS.map((r) => (
           <View key={r.key} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}>
             <View style={{ flex: 1 }}>
@@ -131,7 +175,7 @@ export function YouScreen() {
               disabled={!nudges.data || save.isPending}
               onValueChange={(v) => toggle(r.key, v)}
               thumbColor={COLORS.white}
-              trackColor={{ true: COLORS.purple, false: COLORS.track }}
+              trackColor={{ true: theme.accent, false: COLORS.track }}
               ios_backgroundColor={COLORS.track}
             />
           </View>

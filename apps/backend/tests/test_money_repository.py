@@ -91,9 +91,14 @@ def test_settle_only_touches_open_entries():
 
     def handler(request):
         seen.append(request)
-        return httpx.Response(200, json=[{"id": ROW_ID}])
+        return httpx.Response(
+            200,
+            json=[{"id": ROW_ID, "direction": "lent", "person": "A", "amount_paise": 5,
+                   "note": None, "created_at": "2026-10-24T08:00:00+00:00"}],
+        )  # fmt: skip
 
-    assert _run(handler, lambda repo: repo.settle_khata(USER, ROW_ID)) is True
+    entry = _run(handler, lambda repo: repo.settle_khata(USER, ROW_ID))
+    assert entry is not None and entry.direction == "lent"
 
     request = seen[0]
     assert request.method == "PATCH"
@@ -117,7 +122,7 @@ def test_list_open_khata_filters_unsettled():
     assert seen[0].url.params["order"] == "created_at.desc,id.asc"
 
 
-def test_put_starting_money_keeps_set_at_on_update():
+def test_put_starting_money_restamps_set_at_on_update():
     seen: list[httpx.Request] = []
     existing = {"bank_paise": 1, "cash_paise": 2, "set_at": "2026-10-01T00:00:00+00:00"}
 
@@ -133,9 +138,11 @@ def test_put_starting_money_keeps_set_at_on_update():
     write = seen[-1]
     assert write.method == "PATCH"
     assert write.url.params["user_id"] == f"eq.{USER}"
-    assert set(json.loads(write.content)) == {"bank_paise", "cash_paise"}
+    body = json.loads(write.content)
+    assert set(body) == {"bank_paise", "cash_paise", "set_at"}
+    # The new balance is "as of now": later spends are measured from this stamp.
+    assert datetime.fromisoformat(body["set_at"]) > datetime(2026, 10, 1, tzinfo=UTC)
     assert result.bank_paise == 500
-    assert result.set_at == datetime(2026, 10, 1, tzinfo=UTC)
 
 
 def test_put_starting_money_inserts_first_time_tolerating_duplicates():
@@ -163,7 +170,7 @@ def test_put_starting_money_inserts_first_time_tolerating_duplicates():
     assert body["user_id"] == USER
     assert "set_at" not in body
     assert patch.method == "PATCH"
-    assert set(json.loads(patch.content)) == {"bank_paise", "cash_paise"}
+    assert set(json.loads(patch.content)) == {"bank_paise", "cash_paise", "set_at"}
     assert result.bank_paise == 500
 
 
@@ -365,3 +372,48 @@ def test_add_subscription_409_is_a_conflict_and_logs_no_body(caplog):
         _run(handler, lambda repo: repo.add_subscription(USER, data))
     assert "SECRET-NAME" not in caplog.text
     assert issubclass(MoneyConflictError, MoneyStoreError)
+
+
+def test_update_spend_filters_by_user_and_skips_subscription_payments():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=[{**SPEND_ROW, "description": "lunch"}])
+
+    from app.features.money.schemas import SpendUpdate
+
+    data = SpendUpdate(description="lunch", amount_paise=100, category="food", spent_on="2026-10-20")
+    result = _run(handler, lambda repo: repo.update_spend(USER, ROW_ID, data))
+
+    req = seen[-1]
+    assert req.method == "PATCH"
+    assert req.url.params["id"] == f"eq.{ROW_ID}"
+    assert req.url.params["user_id"] == f"eq.{USER}"
+    assert req.url.params["category"] == "neq.subscription"
+    assert "user_id" not in json.loads(req.content)
+    assert result is not None and result.description == "lunch"
+
+
+def test_update_spend_returns_none_when_nothing_matched():
+    from app.features.money.schemas import SpendUpdate
+
+    data = SpendUpdate(description="x", amount_paise=1, category="food", spent_on="2026-10-20")
+    result = _run(lambda request: httpx.Response(200, json=[]), lambda repo: repo.update_spend(USER, ROW_ID, data))
+    assert result is None
+
+
+def test_sum_spends_logged_after_filters_by_user_and_time():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=[{"id": "a", "amount_paise": 300}, {"id": "b", "amount_paise": 25}])
+
+    after = datetime(2026, 10, 1, tzinfo=UTC)
+    total = _run(handler, lambda repo: repo.sum_spends_logged_after(USER, after))
+
+    req = seen[-1]
+    assert req.url.params["user_id"] == f"eq.{USER}"
+    assert req.url.params["created_at"] == f"gt.{after.isoformat()}"
+    assert total == 325

@@ -17,6 +17,7 @@ import httpx
 from app.core.config import Settings
 from app.features.money.schemas import (
     BalanceSnapshot,
+    Credit,
     KhataCreate,
     KhataEntry,
     NudgeTemplate,
@@ -24,6 +25,7 @@ from app.features.money.schemas import (
     NudgesPut,
     Spend,
     SpendCreate,
+    SpendUpdate,
     StartingMoney,
     StartingMoneyPut,
     Subscription,
@@ -151,6 +153,33 @@ class MoneyRepository:
         )
         return [Spend(**row) for row in rows]
 
+    async def update_spend(self, user_id: str, spend_id: str, data: SpendUpdate) -> Spend | None:
+        """None when the spend is missing, not the user's, or a subscription payment."""
+        rows = await self._request(
+            "PATCH",
+            "spends",
+            params={
+                "id": f"eq.{_uid(spend_id)}",
+                "user_id": f"eq.{_uid(user_id)}",
+                "category": "neq.subscription",
+            },
+            json=data.model_dump(mode="json"),
+            prefer=_REP,
+        )
+        return Spend(**rows[0]) if rows else None
+
+    async def sum_spends_logged_after(self, user_id: str, after: datetime) -> int:
+        rows = await self._get_all(
+            "spends",
+            {
+                "user_id": f"eq.{_uid(user_id)}",
+                "created_at": f"gt.{after.isoformat()}",
+                "select": "id,amount_paise",
+                "order": "id.asc",
+            },
+        )
+        return sum(int(r["amount_paise"]) for r in rows)
+
     async def delete_spend(self, user_id: str, spend_id: str) -> bool:
         return await self._delete("spends", user_id, spend_id)
 
@@ -193,8 +222,14 @@ class MoneyRepository:
                 json={**amounts, "user_id": uid},
                 prefer="resolution=ignore-duplicates,return=minimal",
             )
+        # Every save restamps set_at: the typed amounts are the balance as of now,
+        # and spends logged after this moment come off it (see net_worth).
         rows = await self._request(
-            "PATCH", "starting_money", params={"user_id": f"eq.{uid}"}, json=amounts, prefer=_REP
+            "PATCH",
+            "starting_money",
+            params={"user_id": f"eq.{uid}"},
+            json={**amounts, "set_at": datetime.now(UTC).isoformat()},
+            prefer=_REP,
         )
         if not rows:
             raise MoneyStoreError("Money service returned no row.")
@@ -209,7 +244,8 @@ class MoneyRepository:
     async def add_khata(self, user_id: str, data: KhataCreate) -> KhataEntry:
         return KhataEntry(**await self._insert("khata_entries", user_id, data.model_dump()))
 
-    async def settle_khata(self, user_id: str, entry_id: str) -> bool:
+    async def settle_khata(self, user_id: str, entry_id: str) -> KhataEntry | None:
+        """The entry just settled, or None when it is missing, not the user's or already settled."""
         rows = await self._request(
             "PATCH",
             "khata_entries",
@@ -217,12 +253,26 @@ class MoneyRepository:
                 "id": f"eq.{_uid(entry_id)}",
                 "user_id": f"eq.{_uid(user_id)}",
                 "settled_at": "is.null",
-                "select": "id",
+                "select": "id,direction,person,amount_paise,note,created_at",
             },
             json={"settled_at": datetime.now(UTC).isoformat()},
             prefer=_REP,
         )
-        return bool(rows)
+        return KhataEntry(**rows[0]) if rows else None
+
+    async def list_received_after(self, user_id: str, after: datetime) -> list[Credit]:
+        """Lent entries marked settled after `after`: money that came back to the user."""
+        rows = await self._get_all(
+            "khata_entries",
+            {
+                "user_id": f"eq.{_uid(user_id)}",
+                "direction": "eq.lent",
+                "settled_at": f"gt.{after.isoformat()}",
+                "select": "id,amount_paise,settled_at",
+                "order": "id.asc",
+            },
+        )
+        return [Credit(amount_paise=int(r["amount_paise"]), at=r["settled_at"]) for r in rows]
 
     async def delete_khata(self, user_id: str, entry_id: str) -> bool:
         return await self._delete("khata_entries", user_id, entry_id)

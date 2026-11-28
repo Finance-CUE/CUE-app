@@ -20,7 +20,9 @@ from app.features.money.repository import MoneyConflictError, MoneyRepository, M
 from app.features.money.schemas import (
     MAX_DATE,
     MIN_DATE,
+    Credit,
     CycleAnswer,
+    SettleRequest,
     DueCycle,
     KhataCreate,
     KhataEntry,
@@ -30,6 +32,7 @@ from app.features.money.schemas import (
     PlannedNudge,
     Spend,
     SpendCreate,
+    SpendUpdate,
     StartingMoney,
     StartingMoneyPut,
     Subscription,
@@ -103,6 +106,20 @@ async def add_spend(request: Request, payload: SpendCreate, user_id: UserId, rep
     return await repo.add_spend(user_id, payload)
 
 
+@router.patch("/spends/{spend_id}")
+@limiter.limit("60/minute")
+async def edit_spend(
+    request: Request, spend_id: EntityId, payload: SpendUpdate, user_id: UserId, repo: Repo
+) -> Spend:
+    updated = await repo.update_spend(user_id, str(spend_id), payload)
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This entry can't be edited. Pull down to refresh, or delete it and log it again.",
+        )
+    return updated
+
+
 @router.delete("/spends/{spend_id}", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("60/minute")
 async def delete_spend(
@@ -129,11 +146,24 @@ async def summary(request: Request, user_id: UserId, repo: Repo) -> MoneySummary
     open_khata = await repo.list_open_khata(user_id)
     lent = sum(k.amount_paise for k in open_khata if k.direction == "lent")
     borrowed = sum(k.amount_paise for k in open_khata if k.direction == "borrowed")
+    since = received = 0
+    balance = None
+    if starting:
+        # Balances saved before set_at was restamped on update still left a history
+        # row; the newest of the two is when the typed balance was last true.
+        history = await repo.list_balance_history(user_id)
+        anchor = max([starting.set_at, *(h.recorded_at for h in history)])
+        since = await repo.sum_spends_logged_after(user_id, anchor)
+        received = sum(c.amount_paise for c in await repo.list_received_after(user_id, anchor))
+        balance = starting.bank_paise + starting.cash_paise - since + received
     return MoneySummary(
-        net_worth_paise=net_worth(starting, lent, borrowed),
+        net_worth_paise=net_worth(starting, since, received),
         starting_money=starting,
         owed_to_you_paise=lent,
         you_owe_paise=borrowed,
+        spent_since_update_paise=since,
+        received_since_update_paise=received,
+        balance_paise=balance,
     )
 
 
@@ -157,9 +187,34 @@ async def add_khata(
 @router.post("/khata/{entry_id}/settle", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("60/minute")
 async def settle_khata(
-    request: Request, entry_id: EntityId, user_id: UserId, repo: Repo
+    request: Request,
+    entry_id: EntityId,
+    user_id: UserId,
+    repo: Repo,
+    tz: Tz,
+    payload: SettleRequest | None = None,
 ) -> Response:
-    return _removed(await repo.settle_khata(user_id, str(entry_id)))
+    """Khata is a record: settling moves real money, so the balance follows it.
+
+    Settling money you lent means it came back (the summary adds it to the
+    balance). Settling money you borrowed means you paid it back, so a
+    "Paid back to <name>" spend is logged and comes off the balance.
+    """
+    entry = await repo.settle_khata(user_id, str(entry_id))
+    if entry is None:
+        return _removed(False)
+    if entry.direction == "borrowed":
+        method = {"cash": " in cash", "upi": " via UPI"}.get(payload.method if payload else None, "")
+        await repo.add_spend(
+            user_id,
+            SpendCreate(
+                description=f"Paid back to {entry.person}{method}",
+                amount_paise=entry.amount_paise,
+                category="other",
+                spent_on=datetime.now(tz).date(),
+            ),
+        )
+    return _removed(True)
 
 
 @router.delete("/khata/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -290,10 +345,15 @@ async def trend(
     request: Request, today: Today, tz: Tz, user_id: UserId, repo: Repo
 ) -> list[TrendPoint]:
     start = today - timedelta(days=TREND_DAYS - 1)
+    history = await repo.list_balance_history(user_id)
+    credits: list[Credit] = []
+    if history:
+        credits = await repo.list_received_after(user_id, min(h.recorded_at for h in history))
     return build_trend(
-        await repo.list_balance_history(user_id),
+        history,
         await repo.list_spends(user_id, start, today),
         start,
         today,
         tz,
+        credits,
     )

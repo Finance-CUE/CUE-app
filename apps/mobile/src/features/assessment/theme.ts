@@ -2,10 +2,11 @@ import { Platform } from 'react-native';
 
 // Values match the auth screens and were read from the Figma CUE frames.
 export const COLORS = {
-  background: '#FAF8F6',
-  text: '#292531',
-  muted: '#918C95',
-  border: '#D0CBD2',
+  // CUE Universal Brand Palette (Archetype Bible): the same for everyone.
+  background: '#FAF7F2',
+  text: '#2F2A27',
+  muted: '#6B625C',
+  border: '#D8CDC0',
   purple: '#8D80CC',
   purpleSoft: '#F1EFF8',
   track: '#ECE8EC',
@@ -14,7 +15,8 @@ export const COLORS = {
   peach: '#E39B80',
   cardDark: '#2F2A38',
   cardDarkText: '#D9D4DE',
-  cardBorder: '#ECE7EB',
+  cardBorder: '#E7DED3',
+  card: '#FFFDF9',
   error: '#C65F68',
   sageTint: '#EAF0E7',
   peachTint: '#FBEDE7',
